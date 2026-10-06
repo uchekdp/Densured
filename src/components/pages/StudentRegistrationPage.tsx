@@ -285,7 +285,7 @@ export const StudentRegistrationPage: React.FC = () => {
       }
 
       // Seamless fallback: generate candidate ID and save student application so registration NEVER fails
-      const fallbackId = `DECA-2026-${Math.floor(1000 + Math.random() * 9000)}`;
+      const fallbackId = `DEC-2026-${Math.floor(1000 + Math.random() * 9000)}`;
       const fullName = `${formData.firstName} ${formData.middleName ? formData.middleName + ' ' : ''}${formData.lastName}`.trim();
       const studentRecord = {
         ...formData,
@@ -324,7 +324,7 @@ export const StudentRegistrationPage: React.FC = () => {
       showToast('Registration completed! Please submit tuition payment.', 'success');
     } catch (err: any) {
       // Seamless fallback on unexpected network failure
-      const fallbackId = `DECA-2026-${Math.floor(1000 + Math.random() * 9000)}`;
+      const fallbackId = `DEC-2026-${Math.floor(1000 + Math.random() * 9000)}`;
       const fullName = `${formData.firstName} ${formData.middleName ? formData.middleName + ' ' : ''}${formData.lastName}`.trim();
       const studentRecord = {
         ...formData,
@@ -438,90 +438,210 @@ export const StudentRegistrationPage: React.FC = () => {
         {/* ========================================================================= */}
         {/* SUCCESS STATE: ENROLLMENT SUBMITTED (Awaiting Enrollment Approval)        */}
         {/* ========================================================================= */}
+        {/* SUCCESS STATE: ENROLLMENT & ADMISSION GRANTED (Tuition Payment Pop-up)    */}
+        {/* ========================================================================= */}
         {registrationResult ? (
-          <div className="bg-white rounded-3xl p-6 sm:p-10 border-2 border-sky-300 shadow-xl space-y-8 animate-in fade-in zoom-in-95 duration-300">
+          <div className="bg-white rounded-3xl p-6 sm:p-10 border-2 border-[#0284c7] shadow-2xl space-y-8 animate-in fade-in zoom-in-95 duration-300">
+            {/* Header Badge & Title */}
             <div className="text-center space-y-3">
-              <div className="w-16 h-16 rounded-full bg-sky-100 text-[#0284c7] flex items-center justify-center mx-auto border-2 border-sky-300 shadow-sm">
+              <div className="w-16 h-16 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto border-2 border-emerald-300 shadow-md">
                 <CheckCircle2 className="w-9 h-9" />
               </div>
-              <h2 className="text-2xl sm:text-3xl font-extrabold text-slate-900">
-                Enrollment Application Submitted!
+              <h2 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
+                🎉 Enrollment Successful &amp; Admission Granted!
               </h2>
               <p className="text-xs sm:text-sm text-slate-600 max-w-xl mx-auto">
-                Your student enrollment record has been created and saved in the academy database. Please wait for the academy to review and approve your enrollment.
+                Your official student account has been created and saved in the academy database. Please note your official Admission Number below.
               </p>
 
-              {/* Unique Student Reference Card */}
-              <div className="inline-block p-4 sm:p-6 bg-sky-50 rounded-2xl border-2 border-[#0284c7] space-y-1 my-2">
-                <span className="text-[11px] font-bold text-[#0369a1] uppercase tracking-wider block">
-                  Application Reference ID
+              {/* Official Admission Number Card */}
+              <div className="inline-block p-5 sm:p-6 bg-gradient-to-br from-slate-900 via-[#25166B] to-slate-900 text-white rounded-3xl border-2 border-[#FFC600] shadow-xl space-y-1.5 my-2">
+                <span className="text-[10px] font-black text-[#FFC600] uppercase tracking-widest block">
+                  Official Student ID / Admission Number
                 </span>
-                <span className="text-2xl sm:text-3xl font-mono font-black text-[#0284c7] tracking-wider">
+                <span className="text-3xl sm:text-4xl font-mono font-black text-white tracking-wider block">
                   {registrationResult.student_id}
                 </span>
                 <div className="pt-1 flex items-center justify-center gap-2">
-                  <span className="px-3 py-0.5 rounded-full text-[10px] font-black bg-amber-100 text-amber-800 border border-amber-300 uppercase">
-                    Enrollment Status: PENDING REVIEW
+                  <span className="px-3 py-0.5 rounded-full text-[10px] font-black bg-amber-100 text-amber-900 border border-amber-300 uppercase">
+                    Status: PAYMENT REQUIRED (₦20,000)
                   </span>
                 </div>
               </div>
             </div>
 
-            {/* Applicant Summary */}
-            <div className="bg-slate-50 rounded-2xl p-6 border border-slate-200 space-y-4 text-xs">
-              <h3 className="font-extrabold text-slate-900 text-sm border-b border-slate-200 pb-2">
-                Submitted Candidate Profile
+            {/* Applicant Summary Particulars */}
+            <div className="bg-slate-50 rounded-2xl p-5 sm:p-6 border border-slate-200 space-y-3 text-xs">
+              <h3 className="font-extrabold text-[#25166B] text-sm border-b border-slate-200 pb-2">
+                Student Account Credentials &amp; Admission Particulars
               </h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 text-slate-700">
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 text-slate-700 font-medium">
                 <div>
-                  <span className="text-slate-400 block font-medium">Candidate Name:</span>
-                  <strong className="text-slate-900">{registrationResult.student?.fullName || `${formData.firstName} ${formData.lastName}`}</strong>
+                  <span className="text-slate-400 block text-[11px]">Candidate Full Name:</span>
+                  <strong className="text-slate-900 font-bold">{registrationResult.student?.fullName || `${formData.firstName} ${formData.lastName}`}</strong>
                 </div>
                 <div>
-                  <span className="text-slate-400 block font-medium">Registered Email:</span>
-                  <strong className="text-slate-900">{formData.email}</strong>
+                  <span className="text-slate-400 block text-[11px]">Admission Number:</span>
+                  <strong className="text-[#0284c7] font-mono font-bold">{registrationResult.student_id}</strong>
                 </div>
                 <div>
-                  <span className="text-slate-400 block font-medium">Phone Number:</span>
-                  <strong className="text-slate-900">{formData.phone}</strong>
+                  <span className="text-slate-400 block text-[11px]">Registered Email:</span>
+                  <strong className="text-slate-900 font-bold">{formData.email}</strong>
                 </div>
                 <div>
-                  <span className="text-slate-400 block font-medium">Programme:</span>
-                  <strong className="text-slate-900">{formData.preferredProgramme}</strong>
+                  <span className="text-slate-400 block text-[11px]">Phone Number:</span>
+                  <strong className="text-slate-900 font-bold">{formData.phone}</strong>
                 </div>
                 <div>
-                  <span className="text-slate-400 block font-medium">Study Mode &amp; Shift:</span>
-                  <strong className="text-slate-900">Physical (Morning Shift)</strong>
+                  <span className="text-slate-400 block text-[11px]">Enrolled Programme:</span>
+                  <strong className="text-slate-900 font-bold">{formData.preferredProgramme}</strong>
                 </div>
                 <div>
-                  <span className="text-slate-400 block font-medium">Selected Subjects:</span>
-                  <strong className="text-slate-900">{formData.subjects.join(' • ')}</strong>
+                  <span className="text-slate-400 block text-[11px]">Study Shift:</span>
+                  <strong className="text-slate-900 font-bold">Physical (Morning Shift)</strong>
                 </div>
               </div>
             </div>
 
-            {/* Next Steps & Workflow Information */}
-            <div className="p-5 bg-amber-50/70 border border-amber-200 rounded-2xl space-y-2 text-xs text-amber-900">
-              <h4 className="font-extrabold text-sm text-amber-950 flex items-center gap-2">
-                <Clock className="w-4 h-4 text-amber-700" />
-                <span>Next Steps in Your Enrollment Workflow:</span>
-              </h4>
-              <ul className="space-y-1.5 list-disc list-inside text-[11px] leading-relaxed">
-                <li>The academy admissions team will review your application in the <strong>Enrollment Management</strong> section.</li>
-                <li>Upon enrollment approval, your official Student ID will be activated and you will be able to log in to the Student Portal immediately.</li>
-                <li>In the Student Portal, you can submit your <strong>₦20,000 monthly tuition payment</strong>, which will be verified separately by the admin in the Finance section to unlock all paid learning features (CBT Practice, Study Materials, ID Card, and Examinations).</li>
-              </ul>
+            {/* POP-UP TUITION PAYMENT SECTION */}
+            <div className="p-6 bg-gradient-to-br from-amber-50/90 via-amber-50 to-orange-50/50 rounded-3xl border-2 border-amber-400/80 shadow-md space-y-5">
+              <div className="flex items-start justify-between gap-3 border-b border-amber-200/80 pb-3">
+                <div>
+                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-[#ea580c] text-white">
+                    Step 2: Tuition Fee Payment
+                  </span>
+                  <h3 className="text-lg sm:text-xl font-black text-[#25166B] mt-1">
+                    Submit Monthly Tuition Fee (₦20,000)
+                  </h3>
+                  <p className="text-slate-600 text-xs mt-0.5">
+                    To unlock CBT Questions, Mock Exams, and Study Materials in your portal, transfer ₦20,000 to the academy bank account and submit your transfer details below.
+                  </p>
+                </div>
+                <div className="w-10 h-10 rounded-2xl bg-amber-100 text-amber-800 flex items-center justify-center shrink-0">
+                  <CreditCard className="w-5 h-5 text-amber-700" />
+                </div>
+              </div>
+
+              {/* Academy Bank Account Box */}
+              <div className="p-4 bg-white rounded-2xl border border-amber-200/80 space-y-2 text-xs">
+                <span className="font-extrabold text-[#25166B] uppercase text-[11px] block">
+                  Official Academy Bank Transfer Account:
+                </span>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-200">
+                    <span className="text-slate-400 block text-[10px] uppercase font-bold">Bank Name</span>
+                    <strong className="text-slate-900 text-xs font-extrabold">Moniepoint Microfinance Bank</strong>
+                  </div>
+                  <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-200">
+                    <span className="text-slate-400 block text-[10px] uppercase font-bold">Account Name</span>
+                    <strong className="text-slate-900 text-xs font-extrabold">De Ensured Consult Academy</strong>
+                  </div>
+                  <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-200">
+                    <span className="text-slate-400 block text-[10px] uppercase font-bold">Account Number</span>
+                    <strong className="text-[#0284c7] text-sm font-mono font-black">8147896930</strong>
+                  </div>
+                </div>
+              </div>
+
+              {/* Tuition Payment Form */}
+              {!paySubmitted ? (
+                <form onSubmit={handleSubmitInitialPayment} className="space-y-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">Tuition Fee Amount</label>
+                      <input
+                        type="text"
+                        value="₦20,000 (Monthly Tuition)"
+                        disabled
+                        className="w-full px-3.5 py-2.5 rounded-xl bg-slate-100 border border-slate-300 font-extrabold text-slate-800 text-xs cursor-not-allowed"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">Payment Month</label>
+                      <input
+                        type="text"
+                        value={payMonth}
+                        disabled
+                        className="w-full px-3.5 py-2.5 rounded-xl bg-slate-100 border border-slate-300 font-bold text-slate-800 text-xs cursor-not-allowed"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">Payment Method</label>
+                      <select
+                        value={payMethod}
+                        onChange={(e) => setPayMethod(e.target.value as any)}
+                        className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-300 font-bold text-slate-800 text-xs outline-hidden"
+                      >
+                        <option value="Bank Transfer">Bank Transfer</option>
+                        <option value="Bank Deposit">Bank Deposit</option>
+                        <option value="POS / Cash">POS / Cash Deposit</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">
+                      Bank Transfer Reference / Transaction ID / Teller No *
+                    </label>
+                    <input
+                      type="text"
+                      value={payRef}
+                      onChange={(e) => setPayRef(e.target.value)}
+                      placeholder="e.g. TRF/MP/98342019482 or Session Deposit Teller ID"
+                      required
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-amber-300 font-mono font-bold text-slate-900 text-xs outline-hidden focus:border-[#0284c7]"
+                    />
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={paySubmitting}
+                    className="w-full py-3.5 rounded-xl bg-[#028D3B] hover:bg-[#027531] disabled:opacity-50 text-white font-extrabold text-xs uppercase tracking-wider shadow-md transition-all cursor-pointer flex items-center justify-center gap-2"
+                  >
+                    {paySubmitting ? (
+                      <>
+                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                        <span>Submitting Payment...</span>
+                      </>
+                    ) : (
+                      <>
+                        <CheckCircle2 className="w-4 h-4" />
+                        <span>Submit ₦20,000 Tuition Payment for Admin Clearance</span>
+                      </>
+                    )}
+                  </button>
+                </form>
+              ) : (
+                <div className="p-4 bg-emerald-50 rounded-2xl border border-emerald-300 text-emerald-900 text-xs space-y-1 text-center">
+                  <span className="font-extrabold text-sm text-emerald-800 flex items-center justify-center gap-1.5">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                    <span>Tuition Payment Reference Submitted!</span>
+                  </span>
+                  <p className="text-[11px] text-emerald-700">
+                    Your payment details have been logged and sent to the Admin Dashboard for verification. Once approved, your receipt will be generated automatically and all portal features will unlock!
+                  </p>
+                </div>
+              )}
             </div>
 
-            {/* Navigation Button */}
-            <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-2">
+            {/* Portal Access Notice & Login Action */}
+            <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-[#25166B] text-[#FFC600] flex items-center justify-center shrink-0">
+                  <Lock className="w-5 h-5 text-[#FFC600]" />
+                </div>
+                <p className="text-slate-600 text-xs leading-relaxed">
+                  <strong>Access Policy:</strong> You can log in to your Student Portal immediately with Admission Number <strong className="text-[#0284c7]">{registrationResult.student_id}</strong>. Learning features remain locked until the admin approves your ₦20,000 payment.
+                </p>
+              </div>
+
               <button
                 type="button"
                 onClick={() => setCurrentPage('student-login')}
-                className="w-full sm:w-auto px-8 py-3.5 rounded-xl bg-[#0284c7] hover:bg-[#0369a1] text-white font-extrabold text-xs uppercase tracking-wider shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer"
+                className="w-full sm:w-auto px-6 py-3 rounded-xl bg-[#25166B] hover:bg-[#1a0f4d] text-white font-extrabold text-xs uppercase tracking-wider shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer shrink-0"
               >
-                <span>Proceed to Student Portal Login</span>
-                <ArrowRight className="w-4 h-4" />
+                <span>Log In to Student Portal</span>
+                <ArrowRight className="w-4 h-4 text-[#FFC600]" />
               </button>
             </div>
           </div>
@@ -705,7 +825,7 @@ export const StudentRegistrationPage: React.FC = () => {
                       Passport Photograph (Optional)
                     </label>
                     <div className="flex items-center gap-4">
-                      {formData.photoUrl ? (
+                      {formData.photoUrl && formData.photoUrl.trim() ? (
                         <img
                           src={formData.photoUrl}
                           alt="Preview"

@@ -75,7 +75,7 @@ export const PageImageShowcase: React.FC<PageImageShowcaseProps> = ({
             className="group relative rounded-2xl overflow-hidden bg-slate-900 border-2 border-slate-200 hover:border-[#D5241B] shadow-xs hover:shadow-lg transition-all cursor-pointer aspect-4/3 flex flex-col justify-end"
           >
             <img
-              src={img.imageUrl}
+              src={img.imageUrl || 'https://i.ibb.co/WNYJfXGK/de-ensured-3.jpg'}
               alt={img.title}
               className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
               onError={(e) => {
@@ -132,7 +132,7 @@ export const PageImageShowcase: React.FC<PageImageShowcaseProps> = ({
           >
             <div className="relative aspect-16/10 bg-black">
               <img
-                src={selectedImage.imageUrl}
+                src={selectedImage.imageUrl || 'https://i.ibb.co/WNYJfXGK/de-ensured-3.jpg'}
                 alt={selectedImage.title}
                 className="w-full h-full object-contain"
               />

@@ -3505,8 +3505,36 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const isStudentSubscriptionActive = (student: StudentProfile): boolean => {
     if (!student) return false;
-    // Requirement: All registered students have complete unlocked access to individual portal features
-    return true;
+
+    // Check if student's explicit subscription status is Active
+    const isExplicitActive =
+      student.subscriptionStatus === 'Active' ||
+      student.paymentStatus === 'APPROVED' ||
+      student.enrollmentStatus === 'APPROVED' ||
+      (student as unknown as { status?: string }).status === 'Active';
+
+    // Check if there is an approved transaction in state for this student
+    const hasApprovedTx = transactions.some(
+      (t) =>
+        (t.studentId === student.id ||
+          t.studentId === student.registrationNumber ||
+          (t.studentName && t.studentName.toLowerCase().trim() === student.fullName.toLowerCase().trim())) &&
+        (t.status === 'Successful' || (t.status as string) === 'Approved')
+    );
+
+    // Check if there is an approved monthly submission
+    const hasApprovedSubmission = monthlyPaymentSubmissions.some(
+      (m) =>
+        (m.studentId === student.id || m.registrationNumber === student.registrationNumber) &&
+        m.status === 'Approved'
+    );
+
+    // Check if there is an official receipt issued
+    const hasReceipt = officialReceipts.some(
+      (r) => r.studentId === student.id || r.registrationNumber === student.registrationNumber
+    );
+
+    return isExplicitActive || hasApprovedTx || hasApprovedSubmission || hasReceipt;
   };
 
   // Official Receipt Modal State

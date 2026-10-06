@@ -84,7 +84,7 @@ export const GalleryPage: React.FC = () => {
               >
                 <div className="relative aspect-16/10 bg-slate-100 overflow-hidden">
                   <img
-                    src={item.image_url}
+                    src={item.image_url || 'https://i.ibb.co/WNYJfXGK/de-ensured-3.jpg'}
                     alt={item.title}
                     className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                   />
@@ -146,7 +146,7 @@ export const GalleryPage: React.FC = () => {
 
             <div className="aspect-16/10 w-full bg-black">
               <img
-                src={selectedItem.image_url}
+                src={selectedItem.image_url || 'https://i.ibb.co/WNYJfXGK/de-ensured-3.jpg'}
                 alt={selectedItem.title}
                 className="w-full h-full object-contain"
               />

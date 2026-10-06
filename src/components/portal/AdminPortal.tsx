@@ -1782,7 +1782,7 @@ export const AdminPortal: React.FC = () => {
                         >
                           <div className="flex items-center gap-2.5">
                             <img
-                              src={std.avatar}
+                              src={std.avatar || 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 100 100"><rect width="100" height="100" fill="%23e2e8f0"/><circle cx="50" cy="40" r="20" fill="%2394a3b8"/><path d="M20 90 C20 65 35 55 50 55 C65 55 80 65 80 90 Z" fill="%2394a3b8"/></svg>'}
                               alt={std.fullName}
                               className="w-8 h-8 rounded-lg object-cover border border-slate-300 shrink-0"
                             />
@@ -1885,7 +1885,7 @@ export const AdminPortal: React.FC = () => {
                           <td className="py-3.5 px-3">
                             <div className="flex items-center gap-2">
                               <img
-                                src={std.avatar}
+                                src={std.avatar || 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 100 100"><rect width="100" height="100" fill="%23e2e8f0"/><circle cx="50" cy="40" r="20" fill="%2394a3b8"/><path d="M20 90 C20 65 35 55 50 55 C65 55 80 65 80 90 Z" fill="%2394a3b8"/></svg>'}
                                 alt={std.fullName}
                                 className="w-8 h-8 rounded-lg object-cover border border-slate-200"
                               />
@@ -2152,7 +2152,7 @@ export const AdminPortal: React.FC = () => {
                                 <div className="w-11 h-11 rounded-xl bg-slate-100 border border-slate-200 flex items-center justify-center font-black text-slate-700 overflow-hidden shrink-0">
                                   {app.passportPhotoUrl || app.photoUrl || (app as any).photo_url ? (
                                     <img
-                                      src={app.passportPhotoUrl || app.photoUrl || (app as any).photo_url}
+                                      src={(app.passportPhotoUrl || app.photoUrl || (app as any).photo_url) || 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 100 100"><rect width="100" height="100" fill="%23e2e8f0"/><circle cx="50" cy="40" r="20" fill="%2394a3b8"/><path d="M20 90 C20 65 35 55 50 55 C65 55 80 65 80 90 Z" fill="%2394a3b8"/></svg>'}
                                       alt={app.fullName}
                                       className="w-full h-full object-cover"
                                     />
@@ -3620,7 +3620,7 @@ export const AdminPortal: React.FC = () => {
                             </div>
 
                             <div className="flex items-center gap-3 pt-1">
-                              {receipt.studentAvatar ? (
+                              {receipt.studentAvatar && receipt.studentAvatar.trim() ? (
                                 <img
                                   src={receipt.studentAvatar}
                                   alt={receipt.studentName}
@@ -4121,7 +4121,7 @@ export const AdminPortal: React.FC = () => {
                       >
                         <div className="relative group">
                           <img
-                            src={img.imageUrl}
+                            src={img.imageUrl || 'https://i.ibb.co/WNYJfXGK/de-ensured-3.jpg'}
                             alt={img.title}
                             className="w-full h-44 object-cover"
                             onError={(e) => {
@@ -4487,7 +4487,7 @@ export const AdminPortal: React.FC = () => {
                 <div className="w-14 h-14 rounded-2xl bg-slate-100 border border-slate-200 overflow-hidden shrink-0 flex items-center justify-center">
                   {selectedApplication.passportPhotoUrl || selectedApplication.photoUrl || (selectedApplication as any).photo_url ? (
                     <img
-                      src={selectedApplication.passportPhotoUrl || selectedApplication.photoUrl || (selectedApplication as any).photo_url}
+                      src={(selectedApplication.passportPhotoUrl || selectedApplication.photoUrl || (selectedApplication as any).photo_url) || 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 100 100"><rect width="100" height="100" fill="%23e2e8f0"/><circle cx="50" cy="40" r="20" fill="%2394a3b8"/><path d="M20 90 C20 65 35 55 50 55 C65 55 80 65 80 90 Z" fill="%2394a3b8"/></svg>'}
                       alt={selectedApplication.fullName}
                       className="w-full h-full object-cover"
                     />
@@ -4856,7 +4856,7 @@ export const AdminPortal: React.FC = () => {
               <div>
                 <label className="block font-bold text-slate-700 mb-1">Passport Photograph (Optional)</label>
                 <div className="flex items-center gap-3">
-                  {newStudentForm.avatar && !newStudentForm.avatar.includes('<svg') ? (
+                  {newStudentForm.avatar && newStudentForm.avatar.trim() && !newStudentForm.avatar.includes('<svg') ? (
                     <img src={newStudentForm.avatar} alt="Preview" className="w-12 h-12 rounded-xl object-cover border-2 border-amber-300" />
                   ) : (
                     <div className="w-12 h-12 rounded-xl bg-slate-100 flex items-center justify-center text-slate-400 border border-slate-200">
@@ -5569,7 +5569,7 @@ export const AdminPortal: React.FC = () => {
             <div className="p-5 sm:p-6 bg-gradient-to-r from-[#25166B] to-[#1a0f4c] text-white flex items-center justify-between border-b border-[#FFC600]/30 shrink-0">
               <div className="flex items-center gap-3">
                 <img
-                  src={selectedStudentDetails.avatar}
+                  src={selectedStudentDetails.avatar || 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 100 100"><rect width="100" height="100" fill="%23e2e8f0"/><circle cx="50" cy="40" r="20" fill="%2394a3b8"/><path d="M20 90 C20 65 35 55 50 55 C65 55 80 65 80 90 Z" fill="%2394a3b8"/></svg>'}
                   alt={selectedStudentDetails.fullName}
                   className="w-14 h-14 rounded-2xl object-cover border-2 border-[#FFC600] shadow-md shrink-0"
                 />
@@ -6180,7 +6180,7 @@ export const AdminPortal: React.FC = () => {
               </div>
 
               {/* Preview */}
-              {imagePreview && (
+              {Boolean(imagePreview && imagePreview.trim()) ? (
                 <div className="p-2 bg-slate-50 rounded-xl border border-slate-200">
                   <span className="text-[10px] font-bold text-slate-400 block mb-1">Live Image Preview</span>
                   <img
@@ -6190,7 +6190,7 @@ export const AdminPortal: React.FC = () => {
                     onError={() => showToast('error', 'Image Error', 'Could not load image preview.')}
                   />
                 </div>
-              )}
+              ) : null}
 
               <div>
                 <label className="block font-bold text-slate-700 mb-1">Image Title *</label>
@@ -6335,7 +6335,7 @@ export const AdminPortal: React.FC = () => {
             </div>
 
             <img
-              src={imageToDelete.imageUrl}
+              src={imageToDelete.imageUrl || 'https://i.ibb.co/WNYJfXGK/de-ensured-3.jpg'}
               alt={imageToDelete.title}
               className="w-full h-32 object-cover rounded-xl border border-slate-200"
             />

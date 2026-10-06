@@ -160,7 +160,7 @@ export const HomePage: React.FC = () => {
             }`}
           >
             <img
-              src={bg.url}
+              src={bg.url || bg.fallback}
               onError={(e) => {
                 (e.target as HTMLImageElement).src = bg.fallback;
               }}
@@ -435,7 +435,7 @@ export const HomePage: React.FC = () => {
                 >
                   <div className="aspect-16/10 bg-slate-100 overflow-hidden">
                     <img
-                      src={item.image_url}
+                      src={item.image_url || 'https://i.ibb.co/WNYJfXGK/de-ensured-3.jpg'}
                       alt={item.title}
                       className="w-full h-full object-cover hover:scale-105 transition-transform duration-300"
                     />

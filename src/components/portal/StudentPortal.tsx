@@ -1,3 +1,4 @@
+const DEFAULT_AVATAR_SVG = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200"><rect width="200" height="200" fill="%23e0f2fe"/><circle cx="100" cy="80" r="40" fill="%230284c7"/><path d="M35 175 C35 130 65 118 100 118 C135 118 165 130 165 175 Z" fill="%230369a1"/></svg>';
 import React, { useState, useEffect, useMemo } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import { useApp, StudentPortalTab } from '../../context/AppContext';
@@ -169,7 +170,7 @@ export const StudentPortal: React.FC = () => {
 
     return (
       (isValidPhoto(currentStudent.avatar) ? currentStudent.avatar : '') ||
-      'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200"><rect width="200" height="200" fill="%23e0f2fe"/><circle cx="100" cy="80" r="40" fill="%230284c7"/><path d="M35 175 C35 130 65 118 100 118 C135 118 165 130 165 175 Z" fill="%230369a1"/></svg>'
+      DEFAULT_AVATAR_SVG
     );
   }, [currentStudent, applications, studentsList]);
 
@@ -443,7 +444,7 @@ export const StudentPortal: React.FC = () => {
     const examQuestions = studentCbtQuestions;
     setCompletedExamQuestions(examQuestions);
     let correctCount = 0;
-    examQuestions.forEach((q: PracticeQuestion, idx: number) => {
+    examQuestions.forEach((q: any, idx: number) => {
       if (selectedAnswers[idx] === q.correctOption) {
         correctCount += 1;
       }
@@ -481,7 +482,7 @@ export const StudentPortal: React.FC = () => {
   };
 
   const LockedFeatureNotice: React.FC<{ featureName: string }> = ({ featureName }) => (
-    <div className="bg-white rounded-3xl border-2 border-amber-400/80 p-6 sm:p-10 text-center max-w-xl mx-auto space-y-6 shadow-sm animate-in fade-in duration-200">
+    <div className="bg-white rounded-3xl border-2 border-amber-400/80 p-6 sm:p-10 text-center max-w-xl mx-auto space-y-6 shadow-sm animate-in fade-in duration-200 my-6">
       <div className="w-16 h-16 rounded-2xl bg-amber-500/15 text-amber-600 flex items-center justify-center mx-auto">
         <Lock className="w-8 h-8 text-amber-600" />
       </div>
@@ -493,7 +494,9 @@ export const StudentPortal: React.FC = () => {
           {featureName} is Locked
         </h3>
         <p className="text-slate-700 text-xs sm:text-sm font-medium leading-relaxed max-w-md mx-auto">
-          Your monthly payment has not been approved. Please complete your ₦20,000 monthly payment to access this feature.
+          {pendingTx
+            ? 'Your ₦20,000 monthly tuition payment reference has been submitted and is currently awaiting verification by an administrator. Once approved, this feature will unlock automatically and your official receipt will be generated.'
+            : 'Your monthly tuition payment has not been approved. Please complete your ₦20,000 monthly payment to unlock this learning feature.'}
         </p>
       </div>
 
@@ -503,8 +506,8 @@ export const StudentPortal: React.FC = () => {
           <strong className="text-[#25166B]">{currentStudent.fullName}</strong>
         </div>
         <div className="flex justify-between">
-          <span className="text-slate-500">Student ID / Reg:</span>
-          <strong className="font-mono text-slate-900">{currentStudent.registrationNumber}</strong>
+          <span className="text-slate-500">Admission Number / Student ID:</span>
+          <strong className="font-mono text-[#0284c7]">{currentStudent.registrationNumber}</strong>
         </div>
         <div className="flex justify-between">
           <span className="text-slate-500">Enrollment Status:</span>
@@ -513,25 +516,15 @@ export const StudentPortal: React.FC = () => {
           </span>
         </div>
         <div className="flex justify-between">
-          <span className="text-slate-500">Monthly Payment Status:</span>
+          <span className="text-slate-500">Monthly Payment Clearance:</span>
           <span
             className={`px-2 py-0.5 rounded text-[10px] font-black border ${
-              isSubscriptionActive || currentStudent.paymentStatus === 'APPROVED' || currentStudent.subscriptionStatus === 'Active'
-                ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
-                : currentStudent.paymentStatus === 'PENDING' || currentStudent.subscriptionStatus === 'Pending Approval'
+              pendingTx
                 ? 'bg-amber-100 text-amber-900 border-amber-300'
-                : currentStudent.paymentStatus === 'EXPIRED' || currentStudent.subscriptionStatus === 'Expired'
-                ? 'bg-red-100 text-red-900 border-red-300'
-                : 'bg-slate-200 text-slate-800 border-slate-300'
+                : 'bg-red-100 text-red-900 border-red-300'
             }`}
           >
-            {isSubscriptionActive || currentStudent.paymentStatus === 'APPROVED' || currentStudent.subscriptionStatus === 'Active'
-              ? 'APPROVED'
-              : currentStudent.paymentStatus === 'PENDING' || currentStudent.subscriptionStatus === 'Pending Approval'
-              ? 'PENDING ADMIN APPROVAL'
-              : currentStudent.paymentStatus === 'EXPIRED' || currentStudent.subscriptionStatus === 'Expired'
-              ? 'EXPIRED'
-              : 'NOT PAID'}
+            {pendingTx ? 'PENDING ADMIN APPROVAL' : 'PAYMENT REQUIRED'}
           </span>
         </div>
         <div className="flex justify-between border-t border-slate-200 pt-2 font-bold">
@@ -546,7 +539,7 @@ export const StudentPortal: React.FC = () => {
         className="w-full sm:w-auto px-8 py-3.5 rounded-xl bg-[#ea580c] hover:bg-[#c2410c] text-white font-extrabold text-xs uppercase tracking-wider shadow-md transition-all flex items-center justify-center gap-2 mx-auto cursor-pointer"
       >
         <CreditCard className="w-4 h-4" />
-        <span>Complete ₦20,000 Monthly Payment</span>
+        <span>{pendingTx ? 'View Payment Status' : 'Pay ₦20,000 Monthly Tuition'}</span>
       </button>
     </div>
   );
@@ -717,7 +710,7 @@ export const StudentPortal: React.FC = () => {
         <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <img
-              src={studentAvatarImg}
+              src={studentAvatarImg || DEFAULT_AVATAR_SVG}
               alt={currentStudent.fullName}
               className="w-12 h-12 rounded-xl object-cover ring-2 ring-[#098CD0]/40"
             />
@@ -856,6 +849,11 @@ export const StudentPortal: React.FC = () => {
                 >
                   {tab.icon}
                   <span>{tab.label}</span>
+                  {!isSubscriptionActive && ['cbt-mocks', 'practice-sets', 'notes', 'progress', 'results', 'id-card'].includes(tab.id) && (
+                    <span className="text-amber-500 font-bold text-xs" title="Locked until ₦20,000 tuition approved">
+                      🔒
+                    </span>
+                  )}
                   {tab.badge && (
                     <span
                       className={`px-1.5 py-0.5 rounded text-[10px] font-black uppercase ${
@@ -1112,7 +1110,10 @@ export const StudentPortal: React.FC = () => {
 
         {/* TAB 2: MY ID CARD */}
         {studentTab === 'id-card' && (
-          <div className="space-y-6">
+          !isSubscriptionActive ? (
+            <LockedFeatureNotice featureName="Official Student Identity Card" />
+          ) : (
+            <div className="space-y-6">
             <div className="bg-white p-6 sm:p-8 rounded-3xl border border-slate-200 shadow-sm space-y-6">
                 <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-slate-200 pb-4">
                 <div>
@@ -1248,13 +1249,13 @@ export const StudentPortal: React.FC = () => {
                         {/* Photo with clean gold & navy ring */}
                         <div className="relative shrink-0">
                           <img
-                            src={studentAvatarImg}
+                            src={studentAvatarImg || DEFAULT_AVATAR_SVG}
                             alt={currentStudent.fullName}
                             style={{ width: '0.72in', height: '0.90in' }}
                             className="rounded-lg object-cover border-2 border-[#FFC600] ring-1 ring-[#0a192f]/20 shadow-xs bg-slate-100"
                             onError={(e) => {
                               (e.currentTarget as HTMLImageElement).src =
-                                'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200"><rect width="200" height="200" fill="%23e0f2fe"/><circle cx="100" cy="80" r="40" fill="%230284c7"/><path d="M35 175 C35 130 65 118 100 118 C135 118 165 130 165 175 Z" fill="%230369a1"/></svg>';
+                                DEFAULT_AVATAR_SVG;
                             }}
                           />
                           <div className="absolute -bottom-1 -right-0.5 px-1 py-0.2 rounded bg-[#028D3B] text-white font-black text-[6.5px] uppercase tracking-wider shadow-2xs">
@@ -1370,7 +1371,8 @@ export const StudentPortal: React.FC = () => {
               </div>
             </div>
           </div>
-        )}
+        )
+      )}
 
         {/* TAB 3: CANDIDATE PROFILE */}
         {studentTab === 'profile' && (
@@ -1387,7 +1389,7 @@ export const StudentPortal: React.FC = () => {
               <div className="bg-slate-50 p-6 rounded-2xl border border-slate-200 text-center space-y-3">
                 <div className="relative inline-block mx-auto">
                   <img
-                    src={studentAvatarImg}
+                    src={studentAvatarImg || DEFAULT_AVATAR_SVG}
                     alt={currentStudent.fullName}
                     className="w-24 h-24 rounded-2xl object-cover mx-auto ring-4 ring-[#d97706]/40 shadow-md bg-white"
                   />
@@ -1654,7 +1656,10 @@ export const StudentPortal: React.FC = () => {
 
         {/* TAB 5: CBT & EXAMINATIONS: MOCK EXAMS (CBT) */}
         {studentTab === 'cbt-mocks' && (
-          <div className="space-y-6">
+          !isSubscriptionActive ? (
+            <LockedFeatureNotice featureName="Computer-Based Test (CBT) Mock Examinations" />
+          ) : (
+            <div className="space-y-6">
             {!activeCbtExamId ? (
               <div className="bg-white p-6 sm:p-8 rounded-3xl border border-slate-200 shadow-sm space-y-6">
                 <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-slate-200 pb-4">
@@ -1777,7 +1782,7 @@ export const StudentPortal: React.FC = () => {
                     <div>
                       {/* Question Pallet */}
                       <div className="flex flex-wrap gap-1.5 mb-6 pb-4 border-b border-slate-200">
-                        {studentCbtQuestions.map((_: PracticeQuestion, idx: number) => (
+                        {studentCbtQuestions.map((q: any, idx: number) => (
                           <button
                             key={idx}
                             onClick={() => setCurrentQuestionIndex(idx)}
@@ -2047,10 +2052,14 @@ export const StudentPortal: React.FC = () => {
               </div>
             )}
           </div>
-        )}
-
+        )
+      )}
         {/* TAB 6: MY RESULTS */}
-        {studentTab === 'results' && (() => {
+        {studentTab === 'results' && (
+          !isSubscriptionActive ? (
+            <LockedFeatureNotice featureName="Real-time Exam Results & Standings" />
+          ) : (
+            (() => {
           const studentCbtAttempts = cbtAttempts.filter(
             (att) => att.studentId === currentStudent.id || att.registrationNumber === currentStudent.registrationNumber
           );
@@ -2152,11 +2161,17 @@ export const StudentPortal: React.FC = () => {
                   )}
                 </div>
             </div>
-          );
-        })()}
+            )
+          })()
+        )
+        )}
 
         {/* TAB 6B: ACADEMIC PROGRESS */}
-        {studentTab === 'progress' && (() => {
+        {studentTab === 'progress' && (
+          !isSubscriptionActive ? (
+            <LockedFeatureNotice featureName="Academic Performance & Progress Ledger" />
+          ) : (
+            (() => {
           const studentCbtAttempts = cbtAttempts.filter(
             (att) => att.studentId === currentStudent.id || att.registrationNumber === currentStudent.registrationNumber
           );
@@ -2304,11 +2319,17 @@ export const StudentPortal: React.FC = () => {
                   </div>
                 </div>
             </div>
-          );
-        })()}
+            )
+          })()
+        )
+        )}
 
         {/* TAB 7: PRACTICE SETS */}
-        {studentTab === 'practice-sets' && (() => {
+        {studentTab === 'practice-sets' && (
+          !isSubscriptionActive ? (
+            <LockedFeatureNotice featureName="20-Year Past Questions Practice Bank" />
+          ) : (
+            (() => {
           const yearsList = Array.from({ length: 21 }, (_, i) => (2005 + i).toString()).reverse(); // 2025 down to 2005
 
           const filteredQuestions = practiceQuestions.filter((q) => {
@@ -2492,8 +2513,10 @@ export const StudentPortal: React.FC = () => {
                   )}
                 </div>
             </div>
-          );
-        })()}
+            )
+          })()
+        )
+        )}
 
         {/* TAB 8: TIMETABLES */}
         {studentTab === 'timetables' && (
@@ -2545,7 +2568,10 @@ export const StudentPortal: React.FC = () => {
 
         {/* TAB 9: LECTURE NOTES & STUDY MATERIALS */}
         {studentTab === 'notes' && (
-          <div className="space-y-6">
+          !isSubscriptionActive ? (
+            <LockedFeatureNotice featureName="Digital Handouts & Study Materials" />
+          ) : (
+            <div className="space-y-6">
             <div className="bg-white p-6 sm:p-8 rounded-3xl border border-slate-200 shadow-sm space-y-6">
                 <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-slate-200 pb-4">
                   <div>
@@ -2640,6 +2666,7 @@ export const StudentPortal: React.FC = () => {
                 )}
               </div>
           </div>
+          )
         )}
 
         {/* TAB 10: ANNOUNCEMENTS */}

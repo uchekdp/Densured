@@ -627,7 +627,7 @@ export const ReceiptAndIDCardVerificationModal: React.FC<ReceiptAndIDCardModalPr
                     {/* Photo with clean gold & navy ring */}
                     <div className="relative shrink-0">
                       <img
-                        src={avatarUrl}
+                        src={avatarUrl || 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200"><rect width="200" height="200" fill="%23e0f2fe"/><circle cx="100" cy="80" r="40" fill="%230284c7"/><path d="M35 175 C35 130 65 118 100 118 C135 118 165 130 165 175 Z" fill="%230369a1"/></svg>'}
                         alt={cryptoPayload.studentName}
                         style={{ width: '0.72in', height: '0.90in' }}
                         className="rounded-lg object-cover border-2 border-[#FFC600] ring-1 ring-[#0a192f]/20 shadow-xs bg-slate-100"
