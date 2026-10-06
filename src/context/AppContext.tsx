@@ -198,7 +198,8 @@ interface AppContextType {
   updateStudentShift: (studentId: string, shift: StudentShift) => void;
   isStudentSubscriptionActive: (student: StudentProfile) => boolean;
 
-  // Official Receipt Modal
+  // Official Receipt Modal & Management
+  officialReceipts: OfficialReceipt[];
   selectedReceipt: OfficialReceipt | null;
   isReceiptModalOpen: boolean;
   openReceiptModal: (receipt: OfficialReceipt) => void;
@@ -768,6 +769,71 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       },
     ];
   });
+
+  // Official Receipts Database State
+  const [officialReceipts, setOfficialReceipts] = useState<OfficialReceipt[]>(() => {
+    const saved = localStorage.getItem('dec_official_receipts');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) return parsed;
+      } catch {
+        // fallback
+      }
+    }
+    return [
+      {
+        id: 'rec-001',
+        receiptNumber: 'DEA-REC-2026-00001',
+        transactionReference: 'PAY-DEC-2026-1049',
+        studentId: 'std-1',
+        studentName: 'Olawale Adebayo',
+        studentEmail: 'olawale.adebayo@student.dec.ng',
+        studentPhone: '+234 803 245 8891',
+        registrationNumber: 'DEC-2025-0142',
+        program: 'UTME',
+        studentShift: 'Morning',
+        amount: 20000,
+        amountInWords: 'TWENTY THOUSAND NAIRA ONLY',
+        currency: 'NGN',
+        monthPeriod: 'October 2026',
+        validUntil: '31 Oct 2026',
+        issueDate: '01 Oct 2026',
+        approvedBy: 'Mr Akinjo Rotimi (Directorate & Super Admin)',
+        approvedAt: '2026-10-01 09:00',
+        qrPayload: 'https://densuredconsult.ng/verify-receipt?receipt=DEA-REC-2026-00001&ref=PAY-DEC-2026-1049&status=APPROVED',
+        status: 'Approved',
+        paymentMethod: 'Bank Transfer (Direct)',
+      },
+      {
+        id: 'rec-002',
+        receiptNumber: 'DEA-REC-2026-00002',
+        transactionReference: 'PAY-DEC-2026-0812',
+        studentId: 'std-2',
+        studentName: 'Chioma Okonkwo',
+        studentEmail: 'chioma.okonkwo@student.dec.ng',
+        studentPhone: '+234 812 456 7890',
+        registrationNumber: 'DEC-2025-0219',
+        program: 'IELTS',
+        studentShift: 'Evening',
+        amount: 15000,
+        amountInWords: 'FIFTEEN THOUSAND NAIRA ONLY',
+        currency: 'NGN',
+        monthPeriod: 'August 2026',
+        validUntil: '31 Aug 2026',
+        issueDate: '01 Aug 2026',
+        approvedBy: 'Mr Akinjo Rotimi (Directorate & Super Admin)',
+        approvedAt: '2026-08-01 08:30',
+        qrPayload: 'https://densuredconsult.ng/verify-receipt?receipt=DEA-REC-2026-00002&ref=PAY-DEC-2026-0812&status=APPROVED',
+        status: 'Approved',
+        paymentMethod: 'POS Terminal',
+      },
+    ];
+  });
+
+  useEffect(() => {
+    localStorage.setItem('dec_official_receipts', JSON.stringify(officialReceipts));
+  }, [officialReceipts]);
 
   // Audit Logs & Admin Users
   const [auditLogs, setAuditLogs] = useState<AuditLogItem[]>(() => {
@@ -2663,19 +2729,28 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const submission = monthlyPaymentSubmissions.find((m) => m.id === submissionId);
     if (!submission) return null;
 
+    // Check if receipt already exists to prevent duplicates (Requirement 20)
+    const ref = submission.transactionReference || submission.referenceOrProof || 'DEC-TX-REF';
+    const existingReceipt = officialReceipts.find(
+      (r) => r.transactionReference === ref || r.id === `rec-${submissionId}`
+    );
+    if (existingReceipt) {
+      return existingReceipt;
+    }
+
     const student = studentsList.find((s) => s.id === submission.studentId) || currentStudent;
     const now = new Date();
     const approvedAtFormatted = now.toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-    const receiptNum = `DEC-REC-${now.getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
+    const receiptNum = `DEA-REC-${now.getFullYear()}-${String(officialReceipts.length + 1).padStart(5, '0')}`;
     const lastDayOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
     const validUntil = `${lastDayOfMonth.getDate()} ${now.toLocaleString('en-US', { month: 'short' })} ${now.getFullYear()}`;
 
-    const qrPayload = `https://densuredconsult.edu.ng/verify-receipt?receipt=${receiptNum}&ref=${submission.transactionReference}&student=${encodeURIComponent(submission.studentName)}&reg=${submission.registrationNumber}&shift=${submission.studentShift}&month=${encodeURIComponent(submission.monthPeriod)}&amount=${submission.amount}&status=APPROVED`;
+    const qrPayload = `https://densuredconsult.edu.ng/verify-receipt?receipt=${receiptNum}&ref=${ref}&student=${encodeURIComponent(submission.studentName)}&reg=${submission.registrationNumber}&shift=${submission.studentShift}&month=${encodeURIComponent(submission.monthPeriod)}&amount=${submission.amount}&status=APPROVED`;
 
     const officialReceipt: OfficialReceipt = {
       id: `rec-${Date.now()}`,
       receiptNumber: receiptNum,
-      transactionReference: submission.transactionReference || submission.referenceOrProof || 'DEC-TX-REF',
+      transactionReference: ref,
       studentId: student.id,
       studentName: student.fullName,
       studentEmail: student.email,
@@ -2689,12 +2764,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       monthPeriod: submission.monthPeriod,
       validUntil,
       issueDate: submission.submittedAt,
-      approvedBy: 'Mr. Akinjo Rotimi (Founder)',
+      approvedBy: 'Mr. Akinjo Rotimi (Founder & Directorate Admin)',
       approvedAt: approvedAtFormatted,
       qrPayload,
       status: 'Approved',
       paymentMethod: submission.paymentMethod as any,
     };
+
+    setOfficialReceipts((prev) => [officialReceipt, ...prev]);
 
     // Update submission in state and Firestore
     const updatedSubmission: MonthlyPaymentSubmission = { ...submission, status: 'Approved', receiptNumber: receiptNum };
@@ -3055,6 +3132,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const tx = transactions.find((t) => t.id === transactionId);
     if (!tx) return null;
 
+    // Check if receipt already exists to prevent duplicate receipts (Requirement 20)
+    const existingReceipt = officialReceipts.find(
+      (r) => r.transactionReference === tx.reference || r.id === `rec-${tx.id}`
+    );
+    if (existingReceipt) {
+      return existingReceipt;
+    }
+
     // Check if student already exists in studentsList
     let student = studentsList.find(
       (s) =>
@@ -3219,6 +3304,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
 
     enrolledStudent.lastApprovedReceipt = officialReceipt;
+    setOfficialReceipts((prev) => [officialReceipt, ...prev]);
 
     // Update Transaction
     setTransactions((prev) =>
@@ -3502,6 +3588,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         rejectTuitionPayment,
         updateStudentShift,
         isStudentSubscriptionActive,
+        officialReceipts,
         selectedReceipt,
         isReceiptModalOpen,
         openReceiptModal,

@@ -137,6 +137,7 @@ export const paymentApi = {
       body: JSON.stringify(payload),
     }),
   getAllPayments: () => apiRequest('/admin/payments'),
+  getAllReceipts: () => apiRequest('/admin/receipts'),
   approvePayment: (id: string) =>
     apiRequest(`/admin/payments/${id}/approve`, {
       method: 'POST',
@@ -151,6 +152,7 @@ export const paymentApi = {
       method: 'DELETE',
     }),
   getStudentPayments: (studentId: string) => apiRequest(`/payments/student/${studentId}`),
+  getStudentReceipts: (studentId: string) => apiRequest(`/receipts/student/${studentId}`),
 };
 
 // Attendance API

@@ -54,17 +54,57 @@ export interface PaymentRecord {
   id: string;
   student_id: string;
   student_name: string;
+  student_phone?: string;
+  student_email?: string;
+  program?: string;
   amount: number;
   payment_month: string;
+  payment_year?: number;
   payment_date: string;
   reference: string;
   method: string;
-  status: 'Pending' | 'Approved' | 'Rejected' | 'Expired';
-  approval_date?: string;
-  expiry_date?: string;
-  approved_by?: string;
   proof_url?: string;
+  status: 'Pending' | 'Approved' | 'Rejected' | 'Expired';
+  submitted_date?: string;
+  approval_date?: string;
+  rejected_date?: string;
+  approved_by?: string;
+  rejected_by?: string;
+  rejection_reason?: string;
+  start_date?: string;
+  expiry_date?: string;
+  receipt_id?: string;
+  receipt_number?: string;
+  created_at?: string;
+  updated_at?: string;
   notes?: string;
+}
+
+export interface ReceiptRecord {
+  id: string;
+  receipt_number: string;
+  payment_id: string;
+  student_id: string;
+  student_name: string;
+  student_email?: string;
+  student_phone?: string;
+  registration_number: string;
+  program?: string;
+  student_shift?: string;
+  amount: number;
+  amount_in_words?: string;
+  currency: 'NGN';
+  month_period: string;
+  valid_until?: string;
+  issue_date: string;
+  approved_by: string;
+  approved_at: string;
+  qr_payload?: string;
+  status: 'Approved';
+  payment_method: string;
+  photo_url?: string;
+  created_at: string;
+  updated_at?: string;
 }
 
 export interface AttendanceRecord {
@@ -194,6 +234,7 @@ export interface DatabaseSchema {
   users: UserRecord[];
   students: StudentRecord[];
   payments: PaymentRecord[];
+  receipts: ReceiptRecord[];
   attendance: AttendanceRecord[];
   cbt_tests: CBTTestRecord[];
   cbt_questions: CBTQuestionRecord[];
@@ -294,6 +335,27 @@ export function generateStudentId(db: DatabaseSchema): string {
 
   const nextNum = maxNum + 1;
   return `${prefix}${String(nextNum).padStart(4, '0')}`;
+}
+
+// Generate unique sequential Receipt Number: e.g. DEA-REC-2026-00001
+export function generateReceiptNumber(db: DatabaseSchema): string {
+  const year = new Date().getFullYear();
+  const prefix = `DEA-REC-${year}-`;
+  const existingNumbers = (db.receipts || [])
+    .map((r) => r?.receipt_number)
+    .filter((num): num is string => typeof num === 'string' && num.startsWith(prefix));
+
+  let maxNum = 0;
+  for (const numStr of existingNumbers) {
+    const parts = numStr.split('-');
+    const num = parseInt(parts[parts.length - 1], 10);
+    if (!isNaN(num) && num > maxNum) {
+      maxNum = num;
+    }
+  }
+
+  const nextNum = maxNum + 1;
+  return `${prefix}${String(nextNum).padStart(5, '0')}`;
 }
 
 // Check and update monthly payment validity (Start Date to Expiry Date)
@@ -506,12 +568,41 @@ function seedInitialDatabase(): DatabaseSchema {
   };
 
   // Payments
+  const receipt1: ReceiptRecord = {
+    id: 'rec-001',
+    receipt_number: 'DEA-REC-2026-00001',
+    payment_id: 'pay-001',
+    student_id: 'DECA-2026-0001',
+    student_name: 'Olawale Adebayo',
+    student_email: 'olawale.adebayo@student.dec.ng',
+    student_phone: '+234 803 245 8891',
+    registration_number: 'DECA-2026-0001',
+    program: 'UTME',
+    student_shift: 'Morning',
+    amount: 20000,
+    amount_in_words: 'TWENTY THOUSAND NAIRA ONLY',
+    currency: 'NGN',
+    month_period: 'October 2026',
+    valid_until: nextMonth.toISOString().split('T')[0],
+    issue_date: now.toISOString().split('T')[0],
+    approved_by: 'Mr Akinjo Rotimi',
+    approved_at: now.toISOString().split('T')[0],
+    qr_payload: 'https://densuredconsult.ng/verify-receipt?receipt=DEA-REC-2026-00001&ref=PAY-DEC-2026-1049&status=APPROVED',
+    status: 'Approved',
+    payment_method: 'Bank Transfer (Direct)',
+    created_at: now.toISOString(),
+  };
+
   const payment1: PaymentRecord = {
     id: 'pay-001',
     student_id: 'DECA-2026-0001',
     student_name: 'Olawale Adebayo',
+    student_phone: '+234 803 245 8891',
+    student_email: 'olawale.adebayo@student.dec.ng',
+    program: 'UTME',
     amount: 20000,
     payment_month: 'October 2026',
+    payment_year: 2026,
     payment_date: now.toISOString().split('T')[0],
     reference: 'PAY-DEC-2026-1049',
     method: 'Bank Transfer (Direct)',
@@ -519,15 +610,47 @@ function seedInitialDatabase(): DatabaseSchema {
     approval_date: now.toISOString().split('T')[0],
     expiry_date: nextMonth.toISOString().split('T')[0],
     approved_by: 'Mr Akinjo Rotimi',
+    receipt_id: 'rec-001',
+    receipt_number: 'DEA-REC-2026-00001',
     notes: 'October 2026 Tuition Verified & Cleared',
+    created_at: now.toISOString(),
+  };
+
+  const receipt2Expired: ReceiptRecord = {
+    id: 'rec-002',
+    receipt_number: 'DEA-REC-2026-00002',
+    payment_id: 'pay-002',
+    student_id: 'DECA-2026-0002',
+    student_name: 'Chidinma Eze',
+    student_email: 'chidinma.eze@student.dec.ng',
+    student_phone: '+234 812 456 7890',
+    registration_number: 'DECA-2026-0002',
+    program: 'WAEC',
+    student_shift: 'Morning',
+    amount: 20000,
+    amount_in_words: 'TWENTY THOUSAND NAIRA ONLY',
+    currency: 'NGN',
+    month_period: 'August 2026',
+    valid_until: '2026-08-31',
+    issue_date: '2026-08-01',
+    approved_by: 'Mr Akinjo Rotimi',
+    approved_at: '2026-08-01',
+    qr_payload: 'https://densuredconsult.ng/verify-receipt?receipt=DEA-REC-2026-00002&ref=PAY-DEC-2026-0812&status=APPROVED',
+    status: 'Approved',
+    payment_method: 'POS Terminal',
+    created_at: '2026-08-01T08:00:00.000Z',
   };
 
   const payment2Expired: PaymentRecord = {
     id: 'pay-002',
     student_id: 'DECA-2026-0002',
     student_name: 'Chidinma Eze',
+    student_phone: '+234 812 456 7890',
+    student_email: 'chidinma.eze@student.dec.ng',
+    program: 'WAEC',
     amount: 20000,
     payment_month: 'August 2026',
+    payment_year: 2026,
     payment_date: '2026-08-01',
     reference: 'PAY-DEC-2026-0812',
     method: 'POS Terminal',
@@ -535,7 +658,10 @@ function seedInitialDatabase(): DatabaseSchema {
     approval_date: '2026-08-01',
     expiry_date: '2026-08-31',
     approved_by: 'Mr Akinjo Rotimi',
+    receipt_id: 'rec-002',
+    receipt_number: 'DEA-REC-2026-00002',
     notes: 'August Tuition - Expired on 31st August 2026',
+    created_at: '2026-08-01T08:00:00.000Z',
   };
 
   // Pending payment for Student 3 awaiting admin approval
@@ -846,6 +972,7 @@ function seedInitialDatabase(): DatabaseSchema {
     users: [adminUser, student1User, student2User, student3User],
     students: [student1, student2, student3],
     payments: [payment1, payment2Expired, payment3Pending],
+    receipts: [receipt1, receipt2Expired],
     attendance,
     cbt_tests: [cbtTest1, cbtTest2],
     cbt_questions: [...cbtQuestionsTest1, ...cbtQuestionsTest2],

@@ -9,10 +9,12 @@ import {
   hashPassword,
   verifyPassword,
   generateStudentId,
+  generateReceiptNumber,
   checkPaymentExpirations,
   StudentRecord,
   UserRecord,
   PaymentRecord,
+  ReceiptRecord,
   AttendanceRecord,
   CBTTestRecord,
   CBTQuestionRecord,
@@ -703,30 +705,81 @@ apiRouter.post('/payments/submit', (req, res) => {
 apiRouter.get('/admin/payments', requireAdmin, (req, res) => {
   const db = getDb();
   checkPaymentExpirations(db);
-  res.json({ payments: db.payments });
+  res.json({ payments: db.payments, receipts: db.receipts || [] });
 });
 
-// Admin Approve Payment
+// Admin Get All Receipts
+apiRouter.get('/admin/receipts', requireAdmin, (req, res) => {
+  const db = getDb();
+  res.json({ receipts: db.receipts || [] });
+});
+
+// Admin Approve Payment & Auto-Generate Official Receipt
 apiRouter.post('/admin/payments/:id/approve', requireAdmin, (req, res) => {
   const { id } = req.params;
   const db = getDb();
 
-  const payment = db.payments.find((p) => p.id === id);
+  const payment = db.payments.find((p) => p.id === id || p.reference === id);
   if (!payment) {
     res.status(404).json({ error: 'Payment record not found.' });
     return;
   }
 
+  const student = db.students.find((s) => s.student_id === payment.student_id || s.id === payment.student_id);
   const now = new Date();
-  const lastDayOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59); // Tuition payment expires at the end of the month
+  const startDateStr = now.toISOString().split('T')[0];
+  const lastDayOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
+  const expiryDateStr = lastDayOfMonth.toISOString().split('T')[0];
+  const approvedAtFormatted = now.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
 
+  // 1. Check for existing receipt to prevent duplicates
+  if (!db.receipts) db.receipts = [];
+  let receipt = db.receipts.find((r) => r.payment_id === payment.id || r.payment_id === id);
+
+  if (!receipt) {
+    const receiptNum = generateReceiptNumber(db);
+    const validUntilFormatted = `${lastDayOfMonth.getDate()} ${now.toLocaleString('en-US', { month: 'short' })} ${now.getFullYear()}`;
+    const qrPayload = `https://densuredconsult.ng/verify-receipt?receipt=${receiptNum}&ref=${payment.reference}&student=${encodeURIComponent(payment.student_name)}&reg=${student?.student_id || payment.student_id}&amount=${payment.amount}&status=APPROVED`;
+
+    receipt = {
+      id: `rec-${Date.now()}-${Math.floor(1000 + Math.random() * 9000)}`,
+      receipt_number: receiptNum,
+      payment_id: payment.id,
+      student_id: payment.student_id,
+      student_name: payment.student_name,
+      student_email: payment.student_email || student?.email,
+      student_phone: payment.student_phone || student?.phone,
+      registration_number: student?.student_id || payment.student_id,
+      program: payment.program || student?.preferred_programme || 'UTME',
+      student_shift: 'Morning',
+      amount: payment.amount,
+      amount_in_words: payment.amount === 20000 ? 'TWENTY THOUSAND NAIRA ONLY' : 'FIFTEEN THOUSAND NAIRA ONLY',
+      currency: 'NGN',
+      month_period: payment.payment_month || `${now.toLocaleString('en-US', { month: 'long' })} ${now.getFullYear()}`,
+      valid_until: validUntilFormatted,
+      issue_date: approvedAtFormatted,
+      approved_by: 'Mr Akinjo Rotimi (Directorate & Super Admin)',
+      approved_at: now.toISOString(),
+      qr_payload: qrPayload,
+      status: 'Approved',
+      payment_method: payment.method || 'Bank Transfer',
+      photo_url: student?.photo_url || '',
+      created_at: now.toISOString(),
+    };
+    db.receipts.unshift(receipt);
+  }
+
+  // 2. Update Payment Record
   payment.status = 'Approved';
-  payment.approval_date = now.toISOString().split('T')[0];
-  payment.expiry_date = lastDayOfMonth.toISOString().split('T')[0];
-  payment.approved_by = 'Mr Akinjo Rotimi';
+  payment.approval_date = startDateStr;
+  payment.start_date = startDateStr;
+  payment.expiry_date = expiryDateStr;
+  payment.approved_by = 'Mr Akinjo Rotimi (Directorate & Super Admin)';
+  payment.receipt_id = receipt.id;
+  payment.receipt_number = receipt.receipt_number;
+  payment.updated_at = now.toISOString();
 
-  // Automatically activate student
-  const student = db.students.find((s) => s.student_id === payment.student_id);
+  // 3. Automatically activate student
   if (student) {
     student.status = 'Active';
     const user = db.users.find((u) => u.student_id === student.student_id);
@@ -736,8 +789,9 @@ apiRouter.post('/admin/payments/:id/approve', requireAdmin, (req, res) => {
   saveDb(db);
   res.json({
     success: true,
-    message: 'Payment approved successfully. Student access activated.',
+    message: `Payment approved successfully. Receipt ${receipt.receipt_number} issued. Student access activated.`,
     payment,
+    receipt,
     student,
   });
 });
@@ -748,17 +802,21 @@ apiRouter.post('/admin/payments/:id/reject', requireAdmin, (req, res) => {
   const { reason } = req.body;
   const db = getDb();
 
-  const payment = db.payments.find((p) => p.id === id);
+  const payment = db.payments.find((p) => p.id === id || p.reference === id);
   if (!payment) {
     res.status(404).json({ error: 'Payment record not found.' });
     return;
   }
 
   payment.status = 'Rejected';
+  payment.rejected_by = 'Mr Akinjo Rotimi (Directorate & Super Admin)';
+  payment.rejected_date = new Date().toISOString().split('T')[0];
+  payment.rejection_reason = reason || 'Verification failed. Please resubmit valid payment evidence.';
   payment.notes = reason ? `Rejected: ${reason}` : 'Payment rejected after verification failure.';
+  payment.updated_at = new Date().toISOString();
   saveDb(db);
 
-  res.json({ success: true, message: 'Payment rejected. Student must review payment evidence.', payment });
+  res.json({ success: true, message: 'Payment rejected. Record preserved permanently in audit history.', payment });
 });
 
 // Admin Permanently Delete Payment/Transaction
@@ -789,7 +847,22 @@ apiRouter.get('/payments/student/:studentId', (req, res) => {
   checkPaymentExpirations(db);
 
   const studentPayments = db.payments.filter((p) => p.student_id === studentId);
-  res.json({ payments: studentPayments });
+  const studentReceipts = (db.receipts || []).filter((r) => r.student_id === studentId);
+  res.json({ payments: studentPayments, receipts: studentReceipts });
+});
+
+apiRouter.get('/receipts/student/:studentId', (req, res) => {
+  const { studentId } = req.params;
+  const session = getSession(req);
+
+  if (!session || (session.role === 'student' && session.studentId !== studentId)) {
+    res.status(403).json({ error: 'Forbidden. You cannot access another student\'s receipts.' });
+    return;
+  }
+
+  const db = getDb();
+  const studentReceipts = (db.receipts || []).filter((r) => r.student_id === studentId);
+  res.json({ receipts: studentReceipts });
 });
 
 // ==========================================
