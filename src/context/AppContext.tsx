@@ -1509,12 +1509,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
 
     if (!found) {
-      // Check if there is an application waiting for academy enrollment approval
+      // Check if there is an application waiting or registered
       const matchingApp = applications.find(
         (a) =>
           (a.email || '').toLowerCase().trim() === cleanId ||
           (a.id || '').toLowerCase().trim() === cleanId ||
-          (a.fullName || '').toLowerCase().trim() === cleanId
+          (a.fullName || '').toLowerCase().trim() === cleanId ||
+          (a.phone || '').trim() === cleanId
       );
       if (matchingApp) {
         if (matchingApp.status === 'Rejected' || matchingApp.enrollmentStatus === 'REJECTED') {
@@ -1523,26 +1524,58 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             message: 'Your enrollment application has been declined. Please contact the academy administration.',
           };
         }
+        // Auto-provision student profile into studentsList so they can access their portal
+        const regNum = matchingApp.id.startsWith('DEC-2026-') ? matchingApp.id : `DEC-2026-${Math.floor(1000 + Math.random() * 9000)}`;
+        const autoStudent: StudentProfile = {
+          id: matchingApp.id,
+          registrationNumber: regNum,
+          fullName: matchingApp.fullName,
+          email: matchingApp.email,
+          phone: matchingApp.phone,
+          avatar: matchingApp.passportPhotoUrl || matchingApp.photoUrl || '',
+          photoUrl: matchingApp.passportPhotoUrl || matchingApp.photoUrl || '',
+          photo_url: matchingApp.passportPhotoUrl || matchingApp.photoUrl || '',
+          passportPhotoUrl: matchingApp.passportPhotoUrl || matchingApp.photoUrl || '',
+          program: matchingApp.program,
+          studyMode: matchingApp.studyMode,
+          studentShift: matchingApp.studentShift || 'Morning',
+          monthlyFee: 20000,
+          enrollmentStatus: 'APPROVED',
+          paymentStatus: 'PENDING',
+          subscriptionStatus: 'Pending Approval',
+          targetExamDate: 'April 2026',
+          daysRemaining: 180,
+          targetScore: '320+',
+          currentAverageScore: 0,
+          attendanceRate: 100,
+          syllabusCompletion: 5,
+          tuitionTotal: 20000,
+          tuitionPaid: 0,
+          tuitionBalance: 20000,
+          currency: 'NGN',
+          nextClass: 'Monday 08:30 AM (Lecture Hall A)',
+          assignedAdvisor: 'Mr. Akinjo Rotimi (Directorate)',
+          recentMockTests: [],
+          password: matchingApp.password || 'student123',
+          subjectCombinations: matchingApp.subjectCombinations || ['Use of English', 'Mathematics'],
+        };
+        setStudentsList((prev) => [autoStudent, ...prev]);
+        setCurrentStudent(autoStudent);
+        setIsStudentLoggedIn(true);
+        localStorage.setItem('dec_student_logged_in', 'true');
+        localStorage.setItem('dec_student_user', JSON.stringify(autoStudent));
         return {
-          success: false,
-          message:
-            'Your enrollment application is currently under review by the academy. Once your enrollment is approved by the admin in Enrollment Management, you will be able to sign in immediately.',
+          success: true,
+          message: 'Welcome to your Student Portal. Please note that learning features require payment approval.',
+          student: autoStudent,
         };
       }
       return {
         success: false,
-        message: 'No student record found with this Email or Registration Number. Please apply or verify your email.',
+        message: 'No student record found with this Email or Registration Number. Please complete registration first.',
       };
     }
 
-    // Check if found student account has enrollment pending or rejected
-    if (found.enrollmentStatus === 'PENDING') {
-      return {
-        success: false,
-        message:
-          'Your enrollment application is currently under review by the academy. Once your enrollment is approved by the admin in Enrollment Management, you will be able to sign in immediately.',
-      };
-    }
     if (found.enrollmentStatus === 'REJECTED') {
       return {
         success: false,
@@ -1693,10 +1726,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     showToast('success', 'Photo Updated', 'Your student passport photo has been updated successfully on your ID card!');
   };
 
-  const addStudent = (newStd: Omit<StudentProfile, 'id'>) => {
-    const id = `std-${Date.now()}`;
-    const studentWithId: StudentProfile = { id, ...newStd };
-    setStudentsList((prev) => [studentWithId, ...prev]);
+  const addStudent = (newStd: Omit<StudentProfile, 'id'> & { id?: string }) => {
+    const id = newStd.id || `std-${Date.now()}`;
+    const studentWithId: StudentProfile = { ...newStd, id };
+    setStudentsList((prev) => {
+      const filtered = prev.filter(
+        (s) => s.id !== id && s.registrationNumber !== studentWithId.registrationNumber
+      );
+      return [studentWithId, ...filtered];
+    });
     try {
       localStorage.setItem('dec_students', JSON.stringify([studentWithId, ...studentsList]));
     } catch {}
@@ -3506,12 +3544,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const isStudentSubscriptionActive = (student: StudentProfile): boolean => {
     if (!student) return false;
 
-    // Check if student's explicit subscription status is Active
+    // Check if student's explicit subscription status is Active (set upon payment approval)
     const isExplicitActive =
       student.subscriptionStatus === 'Active' ||
-      student.paymentStatus === 'APPROVED' ||
-      student.enrollmentStatus === 'APPROVED' ||
-      (student as unknown as { status?: string }).status === 'Active';
+      student.paymentStatus === 'APPROVED';
 
     // Check if there is an approved transaction in state for this student
     const hasApprovedTx = transactions.some(

@@ -67,6 +67,7 @@ import {
   XCircle,
   Sparkles,
   ChevronDown,
+  ChevronRight,
   Globe,
   RefreshCw,
   BarChart2,
@@ -183,6 +184,8 @@ export const AdminPortal: React.FC = () => {
   const [attendanceProg, setAttendanceProg] = useState('All');
   const [attendanceCohort, setAttendanceCohort] = useState('Morning Weekday Batch A');
   const [attendanceEntries, setAttendanceEntries] = useState<Record<string, 'Present' | 'Late' | 'Absent' | 'Excused'>>({});
+  const [attendanceSearch, setAttendanceSearch] = useState('');
+  const [attendanceStatusFilter, setAttendanceStatusFilter] = useState<'All' | 'Present' | 'Late' | 'Absent' | 'Excused'>('All');
 
   // Add study material state & deletion
   const [showAddMatModal, setShowAddMatModal] = useState(false);
@@ -308,12 +311,17 @@ export const AdminPortal: React.FC = () => {
   const [paymentTimeframeFilter, setPaymentTimeframeFilter] = useState<'daily' | 'weekly' | 'monthly' | 'annual' | 'all'>('all');
   const [receiptSearch, setReceiptSearch] = useState('');
   const [receiptProgramFilter, setReceiptProgramFilter] = useState('All');
+  const [receiptTimeframeFilter, setReceiptTimeframeFilter] = useState<'all' | 'today' | 'yesterday' | 'weekly' | 'monthly' | 'custom'>('all');
+  const [receiptDateFilter, setReceiptDateFilter] = useState('');
+  const [receiptMonthFilter, setReceiptMonthFilter] = useState('All');
+  const [receiptYearFilter, setReceiptYearFilter] = useState('All');
+  const [receiptSortTime, setReceiptSortTime] = useState<'newest' | 'oldest'>('newest');
 
   // Payment History Detailed Search, Filters, Sorting & Pagination States
   const [paymentSearch, setPaymentSearch] = useState('');
   const [paymentMonthFilter, setPaymentMonthFilter] = useState('All');
   const [paymentYearFilter, setPaymentYearFilter] = useState('All');
-  const [paymentStatusFilter, setPaymentStatusFilter] = useState('All');
+  const [paymentStatusFilter, setPaymentStatusFilter] = useState('Approved');
   const [paymentStartDate, setPaymentStartDate] = useState('');
   const [paymentEndDate, setPaymentEndDate] = useState('');
   const [paymentSortOrder, setPaymentSortOrder] = useState<'newest' | 'oldest' | 'amount-high' | 'amount-low'>('newest');
@@ -1041,7 +1049,7 @@ export const AdminPortal: React.FC = () => {
 
     // 1. Successful payments from transactions
     transactions
-      .filter((t) => t.status === 'Successful')
+      .filter((t) => t.status === 'Successful' || (t.status as string) === 'Approved')
       .forEach((tx) => {
         const txEmail = (tx as any).email;
         const std = studentsList.find(
@@ -1067,7 +1075,7 @@ export const AdminPortal: React.FC = () => {
             program: tx.program || std?.program || 'UTME',
             studentShift: shift,
             amount,
-            amountInWords: 'TWENTY THOUSAND NAIRA ONLY',
+            amountInWords: amount === 20000 ? 'TWENTY THOUSAND NAIRA ONLY' : 'FIFTEEN THOUSAND NAIRA ONLY',
             currency: 'NGN',
             monthPeriod: tx.monthPeriod || std?.subscriptionMonth || 'October 2026',
             validUntil: tx.validUntil || std?.subscriptionExpiryDate || '31 Oct 2026',
@@ -1082,9 +1090,44 @@ export const AdminPortal: React.FC = () => {
         }
       });
 
-    // 2. Enrolled students with Active status or tuitionPaid >= 20000
+    // 2. Approved monthlyPaymentSubmissions
+    (monthlyPaymentSubmissions || [])
+      .filter((sub) => sub.status === 'Approved')
+      .forEach((sub) => {
+        const ref = sub.transactionReference || sub.referenceOrProof || `DEC-SUB-${sub.id}`;
+        if (!seenRefs.has(ref)) {
+          seenRefs.add(ref);
+          const std = studentsList.find((s) => s.id === sub.studentId || s.registrationNumber === sub.registrationNumber);
+          list.push({
+            id: `rec-sub-${sub.id}`,
+            receiptNumber: sub.receiptNumber || `DEA-REC-2026-${Math.floor(10000 + Math.random() * 90000)}`,
+            transactionReference: ref,
+            studentId: sub.studentId || std?.id || 'std-1',
+            studentName: sub.studentName || std?.fullName || 'Candidate',
+            studentEmail: std?.email || 'candidate@densuredconsult.ng',
+            studentPhone: std?.phone || '08147896930',
+            registrationNumber: sub.registrationNumber || std?.registrationNumber || 'DEC-2026-REG',
+            program: std?.program || 'UTME',
+            studentShift: sub.studentShift || std?.studentShift || 'Morning',
+            amount: sub.amount || 20000,
+            amountInWords: sub.amount === 20000 ? 'TWENTY THOUSAND NAIRA ONLY' : 'FIFTEEN THOUSAND NAIRA ONLY',
+            currency: 'NGN',
+            monthPeriod: sub.monthPeriod || 'October 2026',
+            validUntil: '31 Oct 2026',
+            issueDate: sub.submittedAt || 'Today',
+            approvedBy: 'Mr. Akinjo Rotimi (Directorate & Super Admin)',
+            approvedAt: sub.approvedAt || sub.submittedAt || new Date().toISOString(),
+            qrPayload: `https://densuredconsult.ng/verify-receipt?ref=${ref}&status=APPROVED`,
+            status: 'Approved',
+            paymentMethod: sub.paymentMethod || 'Bank Transfer',
+            studentAvatar: findValidPhoto(std?.avatar, std?.photoUrl, std?.passportPhotoUrl),
+          });
+        }
+      });
+
+    // 3. Enrolled students with Active status or tuitionPaid >= 15000
     studentsList
-      .filter((s) => s.subscriptionStatus === 'Active' || (s.tuitionPaid || 0) >= 20000)
+      .filter((s) => s.subscriptionStatus === 'Active' || (s.tuitionPaid || 0) >= 15000 || s.paymentStatus === 'APPROVED')
       .forEach((s) => {
         const ref = s.lastApprovedReceipt?.transactionReference || `DEC-REF-${s.registrationNumber}`;
         if (!seenRefs.has(ref)) {
@@ -1106,8 +1149,8 @@ export const AdminPortal: React.FC = () => {
               registrationNumber: s.registrationNumber,
               program: s.program,
               studentShift: s.studentShift || 'Morning',
-              amount: s.monthlyFee || 20000,
-              amountInWords: 'TWENTY THOUSAND NAIRA ONLY',
+              amount: s.monthlyFee || (s.studentShift === 'Evening' ? 15000 : 20000),
+              amountInWords: (s.monthlyFee || 20000) === 20000 ? 'TWENTY THOUSAND NAIRA ONLY' : 'FIFTEEN THOUSAND NAIRA ONLY',
               currency: 'NGN',
               monthPeriod: s.subscriptionMonth || 'October 2026',
               validUntil: s.subscriptionExpiryDate || '31 Oct 2026',
@@ -1124,7 +1167,103 @@ export const AdminPortal: React.FC = () => {
       });
 
     return list;
-  }, [officialReceipts, transactions, studentsList]);
+  }, [officialReceipts, transactions, studentsList, monthlyPaymentSubmissions]);
+
+  // Filtered & Sorted Paid Receipts for "Receipts at a Certain Time"
+  const filteredPaidReceipts = React.useMemo(() => {
+    return allPaidStudentReceipts.filter((rec) => {
+      // 1. Search filter
+      if (receiptSearch.trim()) {
+        const q = receiptSearch.toLowerCase().trim();
+        const matchName = rec.studentName.toLowerCase().includes(q);
+        const matchReg = rec.registrationNumber.toLowerCase().includes(q);
+        const matchRecNo = rec.receiptNumber.toLowerCase().includes(q);
+        const matchRef = rec.transactionReference.toLowerCase().includes(q);
+        if (!matchName && !matchReg && !matchRecNo && !matchRef) return false;
+      }
+
+      // 2. Program filter
+      if (receiptProgramFilter !== 'All') {
+        if (rec.program !== receiptProgramFilter) return false;
+      }
+
+      // 3. Month filter
+      if (receiptMonthFilter !== 'All') {
+        const monthPeriodStr = (rec.monthPeriod || '').toLowerCase();
+        const approvedStr = (rec.approvedAt || rec.issueDate || '').toLowerCase();
+        if (!monthPeriodStr.includes(receiptMonthFilter.toLowerCase()) && !approvedStr.includes(receiptMonthFilter.toLowerCase())) {
+          return false;
+        }
+      }
+
+      // 4. Year filter
+      if (receiptYearFilter !== 'All') {
+        const recDateStr = `${rec.approvedAt || ''} ${rec.issueDate || ''} ${rec.monthPeriod || ''}`;
+        if (!recDateStr.includes(receiptYearFilter)) return false;
+      }
+
+      // 5. Specific Date filter
+      if (receiptDateFilter) {
+        const targetDate = receiptDateFilter; // YYYY-MM-DD
+        const recStr = `${rec.approvedAt || ''} ${rec.issueDate || ''}`;
+        if (!recStr.includes(targetDate)) {
+          // Check formatted dates like 06 Oct 2026
+          const dObj = new Date(targetDate);
+          if (!isNaN(dObj.getTime())) {
+            const dayNum = String(dObj.getDate()).padStart(2, '0');
+            const monthShort = dObj.toLocaleString('en-US', { month: 'short' });
+            if (!recStr.includes(`${dayNum} ${monthShort}`) && !recStr.includes(monthShort)) {
+              return false;
+            }
+          }
+        }
+      }
+
+      // 6. Timeframe Filter ("all", "today", "yesterday", "weekly", "monthly")
+      if (receiptTimeframeFilter !== 'all') {
+        const now = new Date();
+        const todayStr = now.toISOString().split('T')[0];
+        const recRaw = rec.approvedAt || rec.issueDate || '';
+
+        if (receiptTimeframeFilter === 'today') {
+          const dayNum = String(now.getDate()).padStart(2, '0');
+          const monthShort = now.toLocaleString('en-US', { month: 'short' });
+          if (!recRaw.includes(todayStr) && !recRaw.includes(`${dayNum} ${monthShort}`) && !recRaw.toLowerCase().includes('today')) {
+            return false;
+          }
+        } else if (receiptTimeframeFilter === 'yesterday') {
+          const yest = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+          const yestDay = String(yest.getDate()).padStart(2, '0');
+          const yestMonth = yest.toLocaleString('en-US', { month: 'short' });
+          if (!recRaw.includes(`${yestDay} ${yestMonth}`) && !recRaw.toLowerCase().includes('yesterday')) {
+            return false;
+          }
+        } else if (receiptTimeframeFilter === 'weekly') {
+          // Any payment in the current month or recent 7 days
+          const curMonth = now.toLocaleString('en-US', { month: 'short' });
+          if (!recRaw.includes(curMonth) && !recRaw.includes('2026')) {
+            return false;
+          }
+        } else if (receiptTimeframeFilter === 'monthly') {
+          const curMonthLong = now.toLocaleString('en-US', { month: 'long' });
+          const curMonthShort = now.toLocaleString('en-US', { month: 'short' });
+          const recMonth = rec.monthPeriod || rec.approvedAt || '';
+          if (!recMonth.includes(curMonthLong) && !recMonth.includes(curMonthShort)) {
+            return false;
+          }
+        }
+      }
+
+      return true;
+    }).sort((a, b) => {
+      const timeA = new Date(a.approvedAt || a.issueDate || 0).getTime() || 0;
+      const timeB = new Date(b.approvedAt || b.issueDate || 0).getTime() || 0;
+      if (receiptSortTime === 'newest') {
+        return timeB - timeA;
+      }
+      return timeA - timeB;
+    });
+  }, [allPaidStudentReceipts, receiptSearch, receiptProgramFilter, receiptTimeframeFilter, receiptDateFilter, receiptMonthFilter, receiptYearFilter, receiptSortTime]);
 
   // Unified Payment Ledger Records for Admin Payment History (Requirement 1 - 5)
   const unifiedPayments = React.useMemo(() => {
@@ -1198,6 +1337,42 @@ export const AdminPortal: React.FC = () => {
         const existing = map.get(key);
         if (tx.receiptNumber) existing.receiptNumber = tx.receiptNumber;
         if (tx.status === 'Successful') existing.status = 'Approved';
+      }
+    });
+
+    // 3. Students from studentsList who have active subscription / approved tuition
+    (studentsList || []).forEach((s) => {
+      const isPaid = s.subscriptionStatus === 'Active' || (s.tuitionPaid || 0) >= 15000 || s.paymentStatus === 'APPROVED' || s.lastApprovedReceipt;
+      if (isPaid) {
+        const ref = s.lastApprovedReceipt?.transactionReference || `DEC-TX-${s.registrationNumber}`;
+        if (!map.has(ref) && !Array.from(map.values()).some((p) => p.studentId === s.id || p.studentId === s.registrationNumber)) {
+          map.set(ref, {
+            id: `pay-std-${s.id}`,
+            reference: ref,
+            studentId: s.registrationNumber || s.id,
+            studentName: s.fullName,
+            studentPhone: s.phone || '08147896930',
+            studentEmail: s.email || 'student@densuredconsult.ng',
+            program: s.program || 'UTME',
+            amount: s.monthlyFee || (s.studentShift === 'Evening' ? 15000 : 20000),
+            monthPeriod: s.subscriptionMonth || s.paymentMonth || 'October 2026',
+            year: 2026,
+            date: '2026-10-01',
+            timestamp: s.lastApprovedReceipt?.approvedAt || '2026-10-01T10:00:00.000Z',
+            paymentMethod: s.lastApprovedReceipt?.paymentMethod || 'Bank Transfer',
+            proof: ref,
+            status: 'Approved',
+            submittedAt: s.lastApprovedReceipt?.issueDate || '01 Oct 2026',
+            approvedAt: s.lastApprovedReceipt?.approvedAt || '01 Oct 2026 10:00 AM',
+            approvedBy: s.lastApprovedReceipt?.approvedBy || 'Mr Akinjo Rotimi (Directorate Admin)',
+            rejectedBy: '',
+            rejectionReason: '',
+            startDate: '2026-10-01',
+            expiryDate: s.subscriptionExpiryDate || '2026-10-31',
+            receiptNumber: s.lastApprovedReceipt?.receiptNumber || `DEA-REC-2026-${s.registrationNumber.replace(/\D/g, '').slice(-5) || '00001'}`,
+            receiptId: `rec-${s.id}`,
+          });
+        }
       }
     });
 
@@ -1807,6 +1982,116 @@ export const AdminPortal: React.FC = () => {
                     </div>
                   </div>
                 </div>
+
+                {/* FEATURE: DAILY ATTENDANCE ROLL CALL ON ADMIN DASHBOARD */}
+                <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-4">
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <UserCheck className="w-5 h-5 text-[#0284c7]" />
+                        <h3 className="font-extrabold text-slate-900 text-base">Daily Attendance Roll Call</h3>
+                      </div>
+                      <p className="text-xs text-slate-500 mt-0.5">
+                        Click Present, Late, Absent, or Excused for any student to log today&apos;s daily attendance in real-time.
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="px-3 py-1.5 rounded-xl bg-slate-100 text-slate-700 font-mono font-bold text-xs border border-slate-200">
+                        Session: {attendanceDate}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={handleMarkAllPresent}
+                        className="px-3 py-1.5 rounded-xl bg-sky-50 hover:bg-sky-100 text-[#0284c7] border border-sky-300 font-bold text-xs cursor-pointer transition-colors"
+                      >
+                        Mark All Present
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleSaveAttendance}
+                        className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-xs cursor-pointer transition-colors flex items-center gap-1.5"
+                      >
+                        <CheckCircle2 className="w-4 h-4" />
+                        <span>Save Session</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    {studentsList.slice(0, 10).map((std) => {
+                      const currentStatus = attendanceEntries[std.id] || 'Present';
+                      return (
+                        <div
+                          key={std.id}
+                          className="p-3 sm:p-3.5 rounded-2xl bg-slate-50 border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs hover:border-slate-300 transition-colors"
+                        >
+                          <div className="flex items-center gap-3">
+                            <img
+                              src={std.avatar || 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 100 100"><rect width="100" height="100" fill="%23e2e8f0"/><circle cx="50" cy="40" r="20" fill="%2394a3b8"/><path d="M20 90 C20 65 35 55 50 55 C65 55 80 65 80 90 Z" fill="%2394a3b8"/></svg>'}
+                              alt={std.fullName}
+                              className="w-9 h-9 rounded-xl object-cover border border-slate-300 shrink-0"
+                            />
+                            <div>
+                              <span className="font-bold text-slate-900 block text-sm">{std.fullName}</span>
+                              <span className="font-mono text-[11px] text-slate-500">
+                                {std.registrationNumber} • {std.program} ({std.studentShift || 'Morning'})
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            {(['Present', 'Late', 'Absent', 'Excused'] as const).map((status) => {
+                              const isSelected = currentStatus === status;
+                              return (
+                                <button
+                                  key={status}
+                                  type="button"
+                                  onClick={() => {
+                                    setAttendanceEntries((prev) => ({ ...prev, [std.id]: status }));
+                                    recordIndividualStudentAttendance(
+                                      std.id,
+                                      attendanceDate,
+                                      status,
+                                      `Marked ${status} via Admin Dashboard roll call`,
+                                      attendanceTime,
+                                      { cohort: attendanceCohort, subject: `${std.program} Daily Roll Call` }
+                                    );
+                                    showToast('success', 'Attendance Updated', `${std.fullName} marked as ${status}`);
+                                  }}
+                                  className={`px-3 py-1.5 rounded-xl font-black text-xs transition-all cursor-pointer ${
+                                    isSelected
+                                      ? status === 'Present'
+                                        ? 'bg-emerald-600 text-white shadow-xs'
+                                        : status === 'Late'
+                                        ? 'bg-amber-500 text-white shadow-xs'
+                                        : status === 'Absent'
+                                        ? 'bg-red-600 text-white shadow-xs'
+                                        : 'bg-blue-600 text-white shadow-xs'
+                                      : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100 hover:text-slate-900'
+                                  }`}
+                                >
+                                  {status}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {studentsList.length > 10 && (
+                    <div className="text-center pt-2 border-t border-slate-100">
+                      <button
+                        type="button"
+                        onClick={() => setAdminTab('attendance')}
+                        className="text-xs font-bold text-[#0284c7] hover:underline cursor-pointer"
+                      >
+                        View full attendance roster ({studentsList.length} candidates) →
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
             )}
 
@@ -2357,13 +2642,104 @@ export const AdminPortal: React.FC = () => {
                 </div>
 
                 {/* Candidate Attendance Roll */}
-                <div className="space-y-3 pt-2">
-                  <h3 className="font-extrabold text-[#0a192f] text-sm">Roll Call List</h3>
+                <div className="space-y-4 pt-2">
+                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+                    <div className="relative flex-1">
+                      <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                      <input
+                        type="text"
+                        value={attendanceSearch}
+                        onChange={(e) => setAttendanceSearch(e.target.value)}
+                        placeholder="Search student by name or registration number..."
+                        className="w-full pl-10 pr-4 py-2 rounded-xl border border-slate-300 text-xs font-medium outline-hidden focus:border-[#0284c7] bg-white"
+                      />
+                    </div>
+                    {/* Status Filter Tabs */}
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      {(['All', 'Present', 'Late', 'Absent', 'Excused'] as const).map((st) => (
+                        <button
+                          key={st}
+                          type="button"
+                          onClick={() => setAttendanceStatusFilter(st)}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                            attendanceStatusFilter === st
+                              ? st === 'Present'
+                                ? 'bg-emerald-600 text-white shadow-xs font-black'
+                                : st === 'Late'
+                                ? 'bg-amber-600 text-white shadow-xs font-black'
+                                : st === 'Absent'
+                                ? 'bg-red-600 text-white shadow-xs font-black'
+                                : st === 'Excused'
+                                ? 'bg-blue-600 text-white shadow-xs font-black'
+                                : 'bg-[#0a192f] text-white shadow-xs font-black'
+                              : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                          }`}
+                        >
+                          {st}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Summary Counters */}
+                  {(() => {
+                    const relevant = studentsList.filter((s) => attendanceProg === 'All' || s.program === attendanceProg);
+                    const pCount = relevant.filter((s) => {
+                      const exist = s.attendanceHistory?.find((h) => h.date === attendanceDate);
+                      return (attendanceEntries[s.id] || exist?.status || 'Present') === 'Present';
+                    }).length;
+                    const lCount = relevant.filter((s) => {
+                      const exist = s.attendanceHistory?.find((h) => h.date === attendanceDate);
+                      return (attendanceEntries[s.id] || exist?.status) === 'Late';
+                    }).length;
+                    const aCount = relevant.filter((s) => {
+                      const exist = s.attendanceHistory?.find((h) => h.date === attendanceDate);
+                      return (attendanceEntries[s.id] || exist?.status) === 'Absent';
+                    }).length;
+                    const eCount = relevant.filter((s) => {
+                      const exist = s.attendanceHistory?.find((h) => h.date === attendanceDate);
+                      return (attendanceEntries[s.id] || exist?.status) === 'Excused';
+                    }).length;
+
+                    return (
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center text-xs">
+                        <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200">
+                          <span className="text-[10px] uppercase font-bold text-emerald-800 block">Present</span>
+                          <span className="text-base font-black text-emerald-700 font-mono">{pCount}</span>
+                        </div>
+                        <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200">
+                          <span className="text-[10px] uppercase font-bold text-amber-800 block">Late</span>
+                          <span className="text-base font-black text-amber-700 font-mono">{lCount}</span>
+                        </div>
+                        <div className="p-2.5 rounded-xl bg-red-50 border border-red-200">
+                          <span className="text-[10px] uppercase font-bold text-red-800 block">Absent</span>
+                          <span className="text-base font-black text-red-700 font-mono">{aCount}</span>
+                        </div>
+                        <div className="p-2.5 rounded-xl bg-blue-50 border border-blue-200">
+                          <span className="text-[10px] uppercase font-bold text-blue-800 block">Excused</span>
+                          <span className="text-base font-black text-blue-700 font-mono">{eCount}</span>
+                        </div>
+                      </div>
+                    );
+                  })()}
+
                   <div className="space-y-2">
                     {studentsList
                       .filter((s) => attendanceProg === 'All' || s.program === attendanceProg)
+                      .filter((s) => {
+                        if (!attendanceSearch.trim()) return true;
+                        const q = attendanceSearch.toLowerCase().trim();
+                        return s.fullName.toLowerCase().includes(q) || s.registrationNumber.toLowerCase().includes(q);
+                      })
+                      .filter((s) => {
+                        if (attendanceStatusFilter === 'All') return true;
+                        const exist = s.attendanceHistory?.find((h) => h.date === attendanceDate);
+                        const cur = attendanceEntries[s.id] || exist?.status || 'Present';
+                        return cur === attendanceStatusFilter;
+                      })
                       .map((std) => {
-                        const currentStatus = attendanceEntries[std.id] || 'Present';
+                        const existingRecord = std.attendanceHistory?.find((h) => h.date === attendanceDate);
+                        const currentStatus = attendanceEntries[std.id] || existingRecord?.status || 'Present';
                         return (
                           <div
                             key={std.id}
@@ -2372,27 +2748,36 @@ export const AdminPortal: React.FC = () => {
                             <div>
                               <span className="font-bold text-[#0a192f] text-sm">{std.fullName}</span>
                               <span className="text-slate-400 font-mono block text-[11px]">
-                                {std.registrationNumber} • {std.program}
+                                {std.registrationNumber} • {std.program} • {std.studentShift || 'Morning'}
                               </span>
                             </div>
 
-                            <div className="flex gap-1.5">
+                            <div className="flex gap-1.5 flex-wrap">
                               {(['Present', 'Late', 'Absent', 'Excused'] as const).map((status) => (
                                 <button
                                   key={status}
                                   type="button"
                                   onClick={() => {
                                     setAttendanceEntries((prev) => ({ ...prev, [std.id]: status }));
+                                    recordIndividualStudentAttendance(
+                                      std.id,
+                                      attendanceDate,
+                                      status,
+                                      `Marked ${status} in daily roll call`,
+                                      attendanceTime,
+                                      { cohort: attendanceCohort, subject: `${attendanceProg === 'All' ? std.program : attendanceProg} Session` }
+                                    );
+                                    showToast('success', 'Attendance Recorded', `${std.fullName} marked as ${status}`);
                                   }}
                                   className={`px-3 py-1.5 rounded-lg font-bold text-xs transition-all cursor-pointer ${
                                     currentStatus === status
                                       ? status === 'Present'
-                                        ? 'bg-emerald-600 text-white shadow-2xs'
+                                        ? 'bg-emerald-600 text-white shadow-xs font-black ring-2 ring-emerald-600/30'
                                         : status === 'Late'
-                                        ? 'bg-amber-600 text-white shadow-2xs'
+                                        ? 'bg-amber-600 text-white shadow-xs font-black ring-2 ring-amber-600/30'
                                         : status === 'Absent'
-                                        ? 'bg-red-600 text-white shadow-2xs'
-                                        : 'bg-blue-600 text-white shadow-2xs'
+                                        ? 'bg-red-600 text-white shadow-xs font-black ring-2 ring-red-600/30'
+                                        : 'bg-blue-600 text-white shadow-xs font-black ring-2 ring-blue-600/30'
                                       : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'
                                   }`}
                                 >
@@ -2892,28 +3277,185 @@ export const AdminPortal: React.FC = () => {
 
                 {/* KPI Cards */}
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                  <div className="p-5 rounded-2xl bg-slate-50 border border-slate-200 text-center space-y-1">
-                    <span className="text-xs text-slate-500 font-bold uppercase">Total Revenue Collected</span>
+                  <div
+                    onClick={() => setAdminTab('payment-history')}
+                    className="p-5 rounded-2xl bg-slate-50 hover:bg-slate-100 border border-slate-200 text-center space-y-1 transition-all cursor-pointer group"
+                  >
+                    <span className="text-xs text-slate-500 font-bold uppercase flex items-center justify-center gap-1 group-hover:text-[#25166B]">
+                      <span>Total Revenue Collected</span>
+                      <ChevronRight className="w-3.5 h-3.5 opacity-60 group-hover:translate-x-0.5 transition-transform" />
+                    </span>
                     <div className="text-2xl sm:text-3xl font-black text-[#0a192f] font-mono">
                       ₦{totalRevenue.toLocaleString()}
                     </div>
                     <span className="text-[11px] text-emerald-600 font-bold">100% Verified in Bank</span>
                   </div>
 
-                  <div className="p-5 rounded-2xl bg-sky-50 border border-sky-200 text-center space-y-1">
-                    <span className="text-xs text-sky-800 font-bold uppercase">Active Monthly Subscriptions</span>
+                  <div
+                    onClick={() => {
+                      setPaymentStatusFilter('Approved');
+                      setAdminTab('payment-history');
+                    }}
+                    className="p-5 rounded-2xl bg-sky-50 hover:bg-sky-100 border border-sky-200 text-center space-y-1 transition-all cursor-pointer group"
+                  >
+                    <span className="text-xs text-sky-800 font-bold uppercase flex items-center justify-center gap-1 group-hover:text-[#0284c7]">
+                      <span>Active Monthly Subscriptions</span>
+                      <ChevronRight className="w-3.5 h-3.5 opacity-60 group-hover:translate-x-0.5 transition-transform" />
+                    </span>
                     <div className="text-2xl sm:text-3xl font-black text-[#0284c7] font-mono">
                       {activePaidStudentsCount} Enrolled
                     </div>
                     <span className="text-[11px] text-sky-700 font-medium">₦20,000 / Candidate Monthly Fee</span>
                   </div>
 
-                  <div className="p-5 rounded-2xl bg-emerald-50 border border-emerald-200 text-center space-y-1">
-                    <span className="text-xs text-emerald-700 font-bold uppercase">Settled Receipts</span>
+                  <div
+                    onClick={() => setAdminTab('receipts')}
+                    className="p-5 rounded-2xl bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-center space-y-1 transition-all cursor-pointer group"
+                  >
+                    <span className="text-xs text-emerald-700 font-bold uppercase flex items-center justify-center gap-1 group-hover:text-emerald-900">
+                      <span>Settled Receipts</span>
+                      <ChevronRight className="w-3.5 h-3.5 opacity-60 group-hover:translate-x-0.5 transition-transform" />
+                    </span>
                     <div className="text-2xl sm:text-3xl font-black text-emerald-800 font-mono">
                       {allPaidStudentReceipts.length} Issued
                     </div>
                     <span className="text-[11px] text-emerald-600 font-medium">Auto-reconciled with Paystack</span>
+                  </div>
+                </div>
+
+                {/* Quick Navigation Action Hub */}
+                <div className="p-4 rounded-2xl bg-[#0a192f] text-white flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4">
+                  <div>
+                    <h3 className="text-sm font-black text-white flex items-center gap-2">
+                      <DollarSign className="w-4 h-4 text-[#FFC600]" />
+                      <span>Finance Management Desks</span>
+                    </h3>
+                    <p className="text-slate-300 text-xs mt-0.5">
+                      Direct access to approved student payment records and time-based receipt archives.
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2.5">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPaymentStatusFilter('Approved');
+                        setAdminTab('payment-history');
+                      }}
+                      className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs transition-colors cursor-pointer flex items-center gap-1.5 shadow-sm"
+                    >
+                      <CheckCircle2 className="w-4 h-4" />
+                      <span>Payment History ({unifiedPayments.filter((p) => p.status === 'Approved').length})</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setAdminTab('receipts')}
+                      className="px-4 py-2 rounded-xl bg-[#25166B] hover:bg-[#1a0f4d] text-[#FFC600] font-black text-xs transition-colors cursor-pointer flex items-center gap-1.5 border border-[#FFC600]/40 shadow-sm"
+                    >
+                      <Printer className="w-4 h-4 text-[#FFC600]" />
+                      <span>Receipts by Time ({allPaidStudentReceipts.length})</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setAdminTab('pending-payments')}
+                      className="px-4 py-2 rounded-xl bg-[#ea580c] hover:bg-[#c2410c] text-white font-black text-xs transition-colors cursor-pointer flex items-center gap-1.5 shadow-sm"
+                    >
+                      <Clock className="w-4 h-4" />
+                      <span>Pending ({transactions.filter((t) => t.status === 'Pending').length})</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* SECTION: Recent Approved Payments Preview */}
+                <div className="space-y-3 pt-2">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="text-base font-black text-[#0a192f] flex items-center gap-2">
+                        <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                        <span>Approved Student Monthly Tuition Payments</span>
+                      </h3>
+                      <p className="text-slate-500 text-xs">
+                        All verified students whose ₦20,000 monthly tuition fee has been cleared and approved.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPaymentStatusFilter('Approved');
+                        setAdminTab('payment-history');
+                      }}
+                      className="text-xs font-bold text-[#0284c7] hover:underline cursor-pointer flex items-center gap-1"
+                    >
+                      <span>View All in Payment History</span>
+                      <ChevronRight className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+
+                  <div className="overflow-x-auto rounded-2xl border border-slate-200">
+                    <table className="w-full text-left text-xs text-slate-600">
+                      <thead className="bg-slate-50 text-slate-700 font-black uppercase text-[10px] tracking-wider border-b border-slate-200">
+                        <tr>
+                          <th className="p-3">Candidate / Student ID</th>
+                          <th className="p-3">Programme</th>
+                          <th className="p-3">Month Period</th>
+                          <th className="p-3">Tuition Fee</th>
+                          <th className="p-3">Status</th>
+                          <th className="p-3">Approved Date</th>
+                          <th className="p-3 text-right">Official Receipt</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 bg-white">
+                        {unifiedPayments
+                          .filter((p) => p.status === 'Approved')
+                          .slice(0, 5)
+                          .map((p) => (
+                            <tr key={p.id} className="hover:bg-slate-50/80 transition-colors">
+                              <td className="p-3">
+                                <span className="font-bold text-[#0a192f] block">{p.studentName}</span>
+                                <span className="text-[11px] font-mono text-slate-400">{p.studentId}</span>
+                              </td>
+                              <td className="p-3">
+                                <span className="px-2 py-0.5 rounded font-black text-[10px] bg-sky-50 text-[#0284c7]">
+                                  {p.program}
+                                </span>
+                              </td>
+                              <td className="p-3 font-semibold text-slate-700">{p.monthPeriod}</td>
+                              <td className="p-3 font-black text-[#0a192f] font-mono">
+                                ₦{p.amount.toLocaleString()}
+                              </td>
+                              <td className="p-3">
+                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800">
+                                  <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                                  <span>Approved</span>
+                                </span>
+                              </td>
+                              <td className="p-3 font-medium text-slate-500">{p.approvedAt || p.date}</td>
+                              <td className="p-3 text-right">
+                                {p.receiptNumber ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const matchedRec = allPaidStudentReceipts.find(
+                                        (r) => r.receiptNumber === p.receiptNumber || r.transactionReference === p.reference
+                                      );
+                                      if (matchedRec) {
+                                        openReceiptModal(matchedRec);
+                                      } else {
+                                        setAdminTab('receipts');
+                                      }
+                                    }}
+                                    className="px-3 py-1 rounded-lg bg-sky-50 hover:bg-sky-100 text-[#0284c7] font-bold text-xs border border-sky-200 cursor-pointer inline-flex items-center gap-1"
+                                  >
+                                    <Printer className="w-3 h-3" />
+                                    <span>{p.receiptNumber}</span>
+                                  </button>
+                                ) : (
+                                  <span className="text-slate-400 italic">Settled</span>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                      </tbody>
+                    </table>
                   </div>
                 </div>
               </div>
@@ -3162,6 +3704,55 @@ export const AdminPortal: React.FC = () => {
                     </div>
                     <span className="text-[10px] text-red-600 block font-medium">Historical Records Preserved</span>
                   </div>
+                </div>
+
+                {/* Status Quick Switch Tabs */}
+                <div className="flex items-center gap-2 flex-wrap border-b border-slate-200 pb-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPaymentStatusFilter('Approved');
+                      setPaymentPage(1);
+                    }}
+                    className={`px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-2 ${
+                      paymentStatusFilter === 'Approved'
+                        ? 'bg-emerald-600 text-white shadow-xs'
+                        : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                    }`}
+                  >
+                    <CheckCircle2 className="w-4 h-4" />
+                    <span>Approved Tuition Payments ({unifiedPayments.filter((p) => p.status === 'Approved').length})</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPaymentStatusFilter('Pending');
+                      setPaymentPage(1);
+                    }}
+                    className={`px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-2 ${
+                      paymentStatusFilter === 'Pending'
+                        ? 'bg-amber-600 text-white shadow-xs'
+                        : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                    }`}
+                  >
+                    <Clock className="w-4 h-4" />
+                    <span>Pending Verification ({unifiedPayments.filter((p) => p.status === 'Pending').length})</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPaymentStatusFilter('All');
+                      setPaymentPage(1);
+                    }}
+                    className={`px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-2 ${
+                      paymentStatusFilter === 'All'
+                        ? 'bg-[#0a192f] text-white shadow-xs'
+                        : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                    }`}
+                  >
+                    <DollarSign className="w-4 h-4" />
+                    <span>All Ledger Records ({unifiedPayments.length})</span>
+                  </button>
                 </div>
 
                 {/* Comprehensive Multi-Filter Bar (Search, Month, Year, Status, Date Range, Sort) */}
@@ -3545,77 +4136,177 @@ export const AdminPortal: React.FC = () => {
               </div>
             )}
 
-            {/* FEATURE 13: FINANCE - RECEIPTS */}
+            {/* FEATURE 13: FINANCE - RECEIPTS (Requirement: Receipts at a Certain Time) */}
             {adminTab === 'receipts' && (
               <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-6">
                 <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-slate-200 pb-4">
                   <div>
-                    <h2 className="text-xl font-black text-[#0a192f]">Official Student Tuition Receipts Desk</h2>
-                    <p className="text-slate-500 text-xs">
-                      Viewing verified receipts of all candidates who have paid their monthly ₦20,000 tuition.
+                    <h2 className="text-xl sm:text-2xl font-black text-[#0a192f]">Official Student Tuition Receipts Desk</h2>
+                    <p className="text-slate-500 text-xs mt-0.5">
+                      View all official receipts of students who made tuition payments at a certain time, date, or monthly period.
                     </p>
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className="px-3 py-1 rounded-full text-xs font-black bg-emerald-100 text-emerald-800 border border-emerald-300">
-                      {allPaidStudentReceipts.length} Paid Candidate Receipts
+                    <span className="px-3.5 py-1.5 rounded-full text-xs font-black bg-emerald-100 text-emerald-800 border border-emerald-300">
+                      {filteredPaidReceipts.length} Verified Receipts at Selected Time
                     </span>
                   </div>
                 </div>
 
-                {/* Search & Program Filter */}
-                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
-                  <div className="relative flex-1">
-                    <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                    <input
-                      type="text"
-                      value={receiptSearch}
-                      onChange={(e) => setReceiptSearch(e.target.value)}
-                      placeholder="Search receipt by student name or registration number..."
-                      className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-300 text-xs font-medium outline-hidden focus:border-[#25166B]"
-                    />
+                {/* Multi-Filter Bar: Time, Date, Month, Timeframe, Search & Programme */}
+                <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-3 text-xs">
+                  {/* Quick Timeframe Filter Tabs */}
+                  <div className="flex items-center justify-between gap-2 flex-wrap border-b border-slate-200/80 pb-3">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="text-[11px] font-bold text-slate-500 uppercase">Payment Timeframe:</span>
+                      {(['all', 'today', 'yesterday', 'weekly', 'monthly'] as const).map((tf) => (
+                        <button
+                          key={tf}
+                          type="button"
+                          onClick={() => {
+                            setReceiptTimeframeFilter(tf);
+                            setReceiptDateFilter('');
+                          }}
+                          className={`px-3 py-1.5 rounded-xl font-bold transition-all cursor-pointer capitalize text-xs ${
+                            receiptTimeframeFilter === tf && !receiptDateFilter
+                              ? 'bg-[#25166B] text-[#FFC600] font-black shadow-xs'
+                              : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-100'
+                          }`}
+                        >
+                          {tf === 'all' ? 'All Time' : tf === 'weekly' ? 'This Week' : tf === 'monthly' ? 'This Month' : tf}
+                        </button>
+                      ))}
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <span className="text-[11px] font-bold text-slate-500">Sort Time:</span>
+                      <select
+                        value={receiptSortTime}
+                        onChange={(e) => setReceiptSortTime(e.target.value as any)}
+                        className="px-2.5 py-1.5 rounded-xl border border-slate-300 font-bold bg-white outline-hidden cursor-pointer text-xs"
+                      >
+                        <option value="newest">Latest Payment First</option>
+                        <option value="oldest">Earliest Payment First</option>
+                      </select>
+                    </div>
                   </div>
-                  <select
-                    value={receiptProgramFilter}
-                    onChange={(e) => setReceiptProgramFilter(e.target.value)}
-                    className="px-3.5 py-2.5 rounded-xl border border-slate-300 text-xs font-bold text-[#0a192f] bg-white outline-hidden"
-                  >
-                    <option value="All">All Programmes</option>
-                    <option value="UTME">UTME / JAMB</option>
-                    <option value="WAEC">WAEC / SSCE</option>
-                    <option value="NECO">NECO SSCE</option>
-                    <option value="IELTS">IELTS</option>
-                    <option value="ATSWA">ATSWA</option>
-                  </select>
+
+                  {/* Filter Inputs Grid */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 pt-1">
+                    {/* Search */}
+                    <div className="relative lg:col-span-2">
+                      <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                      <input
+                        type="text"
+                        value={receiptSearch}
+                        onChange={(e) => setReceiptSearch(e.target.value)}
+                        placeholder="Search student, Reg No, or Receipt No..."
+                        className="w-full pl-9 pr-3 py-2 rounded-xl border border-slate-300 text-xs font-medium outline-hidden focus:border-[#25166B] bg-white"
+                      />
+                    </div>
+
+                    {/* Specific Date Filter (Payment at a certain time/day) */}
+                    <div>
+                      <input
+                        type="date"
+                        value={receiptDateFilter}
+                        onChange={(e) => {
+                          setReceiptDateFilter(e.target.value);
+                          setReceiptTimeframeFilter('custom');
+                        }}
+                        className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs font-medium outline-hidden bg-white text-slate-700"
+                        title="Filter receipts by specific payment date"
+                      />
+                    </div>
+
+                    {/* Month Filter */}
+                    <div>
+                      <select
+                        value={receiptMonthFilter}
+                        onChange={(e) => setReceiptMonthFilter(e.target.value)}
+                        className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs font-bold text-slate-800 bg-white outline-hidden cursor-pointer"
+                      >
+                        <option value="All">All Months</option>
+                        <option value="January">January</option>
+                        <option value="February">February</option>
+                        <option value="March">March</option>
+                        <option value="April">April</option>
+                        <option value="May">May</option>
+                        <option value="June">June</option>
+                        <option value="July">July</option>
+                        <option value="August">August</option>
+                        <option value="September">September</option>
+                        <option value="October">October</option>
+                        <option value="November">November</option>
+                        <option value="December">December</option>
+                      </select>
+                    </div>
+
+                    {/* Programme Filter */}
+                    <div>
+                      <select
+                        value={receiptProgramFilter}
+                        onChange={(e) => setReceiptProgramFilter(e.target.value)}
+                        className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs font-bold text-slate-800 bg-white outline-hidden cursor-pointer"
+                      >
+                        <option value="All">All Programmes</option>
+                        <option value="UTME">UTME / JAMB</option>
+                        <option value="WAEC">WAEC / SSCE</option>
+                        <option value="NECO">NECO SSCE</option>
+                        <option value="IELTS">IELTS</option>
+                        <option value="ATSWA">ATSWA</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Filter status / Clear link */}
+                  {(receiptSearch || receiptProgramFilter !== 'All' || receiptDateFilter || receiptMonthFilter !== 'All' || receiptTimeframeFilter !== 'all') && (
+                    <div className="flex items-center justify-between pt-1 border-t border-slate-200">
+                      <span className="text-[11px] text-slate-500 font-medium">
+                        Showing filtered receipts for selected time / criteria ({filteredPaidReceipts.length} results)
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setReceiptSearch('');
+                          setReceiptProgramFilter('All');
+                          setReceiptDateFilter('');
+                          setReceiptMonthFilter('All');
+                          setReceiptTimeframeFilter('all');
+                        }}
+                        className="text-xs text-[#0284c7] font-bold hover:underline cursor-pointer"
+                      >
+                        Reset All Time Filters
+                      </button>
+                    </div>
+                  )}
                 </div>
 
                 {/* Paid Students Receipts Grid */}
-                {allPaidStudentReceipts.filter((rec) => {
-                  const matchSearch =
-                    !receiptSearch ||
-                    rec.studentName.toLowerCase().includes(receiptSearch.toLowerCase()) ||
-                    rec.registrationNumber.toLowerCase().includes(receiptSearch.toLowerCase()) ||
-                    rec.receiptNumber.toLowerCase().includes(receiptSearch.toLowerCase());
-                  const matchProg = receiptProgramFilter === 'All' || rec.program === receiptProgramFilter;
-                  return matchSearch && matchProg;
-                }).length > 0 ? (
+                {filteredPaidReceipts.length > 0 ? (
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {allPaidStudentReceipts
-                      .filter((rec) => {
-                        const matchSearch =
-                          !receiptSearch ||
-                          rec.studentName.toLowerCase().includes(receiptSearch.toLowerCase()) ||
-                          rec.registrationNumber.toLowerCase().includes(receiptSearch.toLowerCase()) ||
-                          rec.receiptNumber.toLowerCase().includes(receiptSearch.toLowerCase());
-                        const matchProg = receiptProgramFilter === 'All' || rec.program === receiptProgramFilter;
-                        return matchSearch && matchProg;
-                      })
-                      .map((receipt) => {
-                        return (
-                          <div key={receipt.id} className="p-5 rounded-2xl border-2 border-slate-200 bg-slate-50/70 hover:border-[#25166B]/40 transition-all space-y-3 text-xs shadow-2xs">
+                    {filteredPaidReceipts.map((receipt) => {
+                      const timeStr = receipt.approvedAt || receipt.issueDate || '10:00 AM';
+                      return (
+                        <div key={receipt.id} className="p-5 rounded-2xl border-2 border-slate-200 bg-slate-50/70 hover:border-[#25166B]/40 transition-all space-y-3 text-xs shadow-2xs flex flex-col justify-between">
+                          <div className="space-y-3">
                             <div className="flex justify-between items-center">
                               <span className="font-mono font-black text-[#d97706] text-xs">{receipt.receiptNumber}</span>
-                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
-                                Verified
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200 flex items-center gap-1">
+                                <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                                <span>Verified</span>
+                              </span>
+                            </div>
+
+                            {/* Payment Time & Date Badge */}
+                            <div className="flex items-center justify-between text-[11px] bg-slate-100 px-2.5 py-1.5 rounded-lg border border-slate-200">
+                              <span className="flex items-center gap-1 text-slate-600 font-medium">
+                                <Clock className="w-3.5 h-3.5 text-[#d97706]" />
+                                <span>Time:</span>
+                                <strong className="text-slate-800 font-mono">{timeStr}</strong>
+                              </span>
+                              <span className="text-slate-500 font-bold">
+                                {receipt.monthPeriod}
                               </span>
                             </div>
 
@@ -3634,47 +4325,65 @@ export const AdminPortal: React.FC = () => {
                               <div>
                                 <h3 className="font-extrabold text-[#0a192f] text-sm leading-tight">{receipt.studentName}</h3>
                                 <p className="text-[11px] text-slate-500 font-mono mt-0.5">
-                                  {receipt.registrationNumber} • {receipt.program}
+                                  {receipt.registrationNumber} • {receipt.program} • {receipt.studentShift}
                                 </p>
                               </div>
                             </div>
 
                             <div className="p-3 bg-white rounded-xl border border-slate-200 space-y-1">
                               <div className="flex justify-between items-center text-slate-600">
-                                <span>Monthly Period:</span>
-                                <span className="font-bold text-slate-900">{receipt.monthPeriod}</span>
+                                <span>Payment Reference:</span>
+                                <span className="font-mono text-[11px] font-bold text-slate-800">{receipt.transactionReference}</span>
                               </div>
-                              <div className="flex justify-between items-center">
-                                <span className="text-slate-600">Tuition Cleared:</span>
+                              <div className="flex justify-between items-center text-slate-600">
+                                <span>Payment Channel:</span>
+                                <span className="font-medium text-slate-800">{receipt.paymentMethod || 'Bank Transfer'}</span>
+                              </div>
+                              <div className="flex justify-between items-center pt-1 border-t border-slate-100">
+                                <span className="text-slate-700 font-bold">Tuition Cleared:</span>
                                 <span className="text-sm font-black font-mono text-emerald-700">
                                   ₦{receipt.amount.toLocaleString()}
                                 </span>
                               </div>
                             </div>
-
-                            <div className="pt-2 border-t border-slate-200 flex justify-end">
-                              <button
-                                type="button"
-                                onClick={() => openReceiptModal(receipt)}
-                                className="w-full py-2 rounded-xl bg-[#25166B] hover:bg-[#1c1152] text-[#FFC600] font-black text-xs cursor-pointer flex items-center justify-center gap-1.5 shadow-sm transition-colors border border-[#FFC600]/30"
-                              >
-                                <Printer className="w-3.5 h-3.5 text-[#FFC600]" />
-                                <span>View & Print Official Receipt</span>
-                              </button>
-                            </div>
                           </div>
-                        );
-                      })}
+
+                          <div className="pt-2 border-t border-slate-200">
+                            <button
+                              type="button"
+                              onClick={() => openReceiptModal(receipt)}
+                              className="w-full py-2.5 rounded-xl bg-[#25166B] hover:bg-[#1c1152] text-[#FFC600] font-black text-xs cursor-pointer flex items-center justify-center gap-1.5 shadow-sm transition-colors border border-[#FFC600]/30"
+                            >
+                              <Printer className="w-3.5 h-3.5 text-[#FFC600]" />
+                              <span>View & Print Official Receipt (with QR)</span>
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 ) : (
                   <div className="p-12 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-300 space-y-2">
                     <div className="w-12 h-12 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center mx-auto">
-                      <FileText className="w-6 h-6" />
+                      <Clock className="w-6 h-6" />
                     </div>
-                    <h4 className="font-bold text-slate-700 text-sm">No Matching Paid Receipts Found</h4>
+                    <h4 className="font-bold text-slate-700 text-sm">No Receipts Found for Selected Time Period</h4>
                     <p className="text-slate-500 text-xs max-w-md mx-auto leading-relaxed">
-                      All approved payments automatically generate official receipts accessible here.
+                      Try clearing or adjusting the payment date or timeframe filters above to view verified receipts across different time periods.
                     </p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setReceiptSearch('');
+                        setReceiptProgramFilter('All');
+                        setReceiptDateFilter('');
+                        setReceiptMonthFilter('All');
+                        setReceiptTimeframeFilter('all');
+                      }}
+                      className="px-4 py-2 bg-[#25166B] text-white rounded-xl text-xs font-bold hover:bg-[#1a0f4d] cursor-pointer mt-2"
+                    >
+                      Show All Time Receipts
+                    </button>
                   </div>
                 )}
               </div>

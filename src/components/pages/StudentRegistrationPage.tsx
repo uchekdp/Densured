@@ -21,10 +21,11 @@ import {
   MapPin,
   Upload,
   Clock,
+  X,
 } from 'lucide-react';
 
 export const StudentRegistrationPage: React.FC = () => {
-  const { setCurrentPage, showToast, submitStudentApplicationWithPayment } = useApp();
+  const { setCurrentPage, showToast, submitStudentApplicationWithPayment, addStudent } = useApp();
 
   const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
   const [submitting, setSubmitting] = useState(false);
@@ -33,6 +34,7 @@ export const StudentRegistrationPage: React.FC = () => {
     student_id: string;
     student: any;
   } | null>(null);
+  const [showTuitionModal, setShowTuitionModal] = useState<boolean>(false);
 
   // Form State
   const [formData, setFormData] = useState({
@@ -242,12 +244,13 @@ export const StudentRegistrationPage: React.FC = () => {
       const res = await studentApi.register(formData);
       if (res.ok && res.data) {
         const fullName = `${formData.firstName} ${formData.middleName ? formData.middleName + ' ' : ''}${formData.lastName}`.trim();
+        const stdId = res.data.student_id || `DEC-2026-${Math.floor(1000 + Math.random() * 9000)}`;
         const unifiedStudent = {
           ...formData,
           ...res.data.student,
-          id: res.data.student_id || res.data.student?.id,
-          student_id: res.data.student_id || res.data.student?.student_id,
-          registrationNumber: res.data.student_id || res.data.student?.registrationNumber,
+          id: stdId,
+          student_id: stdId,
+          registrationNumber: stdId,
           fullName,
           full_name: fullName,
           avatar: formData.photoUrl || res.data.student?.avatar || res.data.student?.photo_url || '',
@@ -255,24 +258,46 @@ export const StudentRegistrationPage: React.FC = () => {
           photo_url: formData.photoUrl || res.data.student?.photo_url || '',
           passportPhotoUrl: formData.photoUrl || res.data.student?.passportPhotoUrl || '',
           program: formData.preferredProgramme || 'UTME',
-          status: 'Pending Payment',
+          studyMode: 'Physical Weekday' as const,
+          studentShift: 'Morning' as const,
+          monthlyFee: 20000,
+          enrollmentStatus: 'APPROVED' as const,
+          paymentStatus: 'NOT_PAID' as const,
+          subscriptionStatus: 'Pending Approval' as const,
+          targetExamDate: 'April 2026',
+          daysRemaining: 180,
+          targetScore: '320+',
+          currentAverageScore: 0,
+          attendanceRate: 100,
+          syllabusCompletion: 5,
+          tuitionTotal: 20000,
+          tuitionPaid: 0,
+          tuitionBalance: 20000,
+          currency: 'NGN' as const,
+          nextClass: 'Monday 08:30 AM (Lecture Hall A)',
+          assignedAdvisor: 'Mr. Akinjo Rotimi (Directorate)',
+          recentMockTests: [],
+          password: formData.password || 'student123',
+          subjectCombinations: formData.subjects || ['Use of English', 'Mathematics'],
         };
 
+        addStudent(unifiedStudent);
         setRegistrationResult({
-          student_id: res.data.student_id,
+          student_id: stdId,
           student: unifiedStudent,
         });
+        setShowTuitionModal(true);
 
         if (formData.photoUrl) {
           try {
             if (formData.email) localStorage.setItem(`dec_photo_${formData.email.toLowerCase().trim()}`, formData.photoUrl);
-            localStorage.setItem(`dec_photo_${res.data.student_id}`, formData.photoUrl);
+            localStorage.setItem(`dec_photo_${stdId}`, formData.photoUrl);
           } catch {}
         }
 
         // Persist to Firebase Firestore
-        setDoc(doc(db, 'students', res.data.student_id), unifiedStudent).catch(() => {});
-        setDoc(doc(db, 'applications', res.data.student_id), unifiedStudent).catch(() => {});
+        setDoc(doc(db, 'students', stdId), unifiedStudent).catch(() => {});
+        setDoc(doc(db, 'applications', stdId), unifiedStudent).catch(() => {});
 
         showToast('Registration submitted successfully! Please submit your tuition payment.', 'success');
         return;
@@ -294,6 +319,7 @@ export const StudentRegistrationPage: React.FC = () => {
         registrationNumber: fallbackId,
         fullName,
         full_name: fullName,
+        gender: (formData.gender === 'Female' ? 'Female' : 'Male') as 'Male' | 'Female',
         email: (formData.email || '').toLowerCase().trim(),
         phone: (formData.phone || '').trim(),
         avatar: formData.photoUrl || (formData as any).avatar || '',
@@ -301,14 +327,36 @@ export const StudentRegistrationPage: React.FC = () => {
         photo_url: formData.photoUrl || '',
         passportPhotoUrl: formData.photoUrl || '',
         program: formData.preferredProgramme || 'UTME',
-        status: 'Pending Payment',
+        studyMode: 'Physical Weekday' as const,
+        studentShift: 'Morning' as const,
+        monthlyFee: 20000,
+        enrollmentStatus: 'APPROVED' as const,
+        paymentStatus: 'NOT_PAID' as const,
+        subscriptionStatus: 'Pending Approval' as const,
+        targetExamDate: 'April 2026',
+        daysRemaining: 180,
+        targetScore: '320+',
+        currentAverageScore: 0,
+        attendanceRate: 100,
+        syllabusCompletion: 5,
+        tuitionTotal: 20000,
+        tuitionPaid: 0,
+        tuitionBalance: 20000,
+        currency: 'NGN' as const,
+        nextClass: 'Monday 08:30 AM (Lecture Hall A)',
+        assignedAdvisor: 'Mr. Akinjo Rotimi (Directorate)',
+        recentMockTests: [],
+        password: formData.password || 'student123',
+        subjectCombinations: formData.subjects || ['Use of English', 'Mathematics'],
         created_at: new Date().toISOString(),
       };
 
+      addStudent(studentRecord);
       setRegistrationResult({
         student_id: fallbackId,
         student: studentRecord,
       });
+      setShowTuitionModal(true);
 
       if (formData.photoUrl) {
         try {
@@ -333,6 +381,7 @@ export const StudentRegistrationPage: React.FC = () => {
         registrationNumber: fallbackId,
         fullName,
         full_name: fullName,
+        gender: (formData.gender === 'Female' ? 'Female' : 'Male') as 'Male' | 'Female',
         email: (formData.email || '').toLowerCase().trim(),
         phone: (formData.phone || '').trim(),
         avatar: formData.photoUrl || (formData as any).avatar || '',
@@ -340,14 +389,36 @@ export const StudentRegistrationPage: React.FC = () => {
         photo_url: formData.photoUrl || '',
         passportPhotoUrl: formData.photoUrl || '',
         program: formData.preferredProgramme || 'UTME',
-        status: 'Pending Payment',
+        studyMode: 'Physical Weekday' as const,
+        studentShift: 'Morning' as const,
+        monthlyFee: 20000,
+        enrollmentStatus: 'APPROVED' as const,
+        paymentStatus: 'NOT_PAID' as const,
+        subscriptionStatus: 'Pending Approval' as const,
+        targetExamDate: 'April 2026',
+        daysRemaining: 180,
+        targetScore: '320+',
+        currentAverageScore: 0,
+        attendanceRate: 100,
+        syllabusCompletion: 5,
+        tuitionTotal: 20000,
+        tuitionPaid: 0,
+        tuitionBalance: 20000,
+        currency: 'NGN' as const,
+        nextClass: 'Monday 08:30 AM (Lecture Hall A)',
+        assignedAdvisor: 'Mr. Akinjo Rotimi (Directorate)',
+        recentMockTests: [],
+        password: formData.password || 'student123',
+        subjectCombinations: formData.subjects || ['Use of English', 'Mathematics'],
         created_at: new Date().toISOString(),
       };
 
+      addStudent(studentRecord);
       setRegistrationResult({
         student_id: fallbackId,
         student: studentRecord,
       });
+      setShowTuitionModal(true);
 
       if (formData.photoUrl) {
         try {
@@ -420,6 +491,171 @@ export const StudentRegistrationPage: React.FC = () => {
 
   return (
     <div className="w-full bg-[#f8fafc] min-h-[90vh] py-10 sm:py-16 px-4 sm:px-6 lg:px-8 font-['Poppins',sans-serif]">
+      {/* POP-UP MODAL: TUITION FEE PAYMENT */}
+      {showTuitionModal && registrationResult && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl max-w-lg w-full border-2 border-[#25166B] shadow-2xl p-6 sm:p-8 space-y-5 max-h-[92vh] overflow-y-auto relative animate-in zoom-in-95 duration-200">
+            <button
+              type="button"
+              onClick={() => setShowTuitionModal(false)}
+              className="absolute top-5 right-5 p-2 rounded-full hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition-colors cursor-pointer"
+              aria-label="Close pop-up"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            {/* Header Badge */}
+            <div className="text-center space-y-2 pt-1">
+              <div className="w-14 h-14 rounded-2xl bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto border-2 border-emerald-300 shadow-sm">
+                <CheckCircle2 className="w-8 h-8" />
+              </div>
+              <span className="px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-sky-50 text-[#0284c7] border border-sky-200 inline-block">
+                Enrolment Completed &amp; Candidate Registered
+              </span>
+              <h3 className="text-xl sm:text-2xl font-black text-[#25166B]">
+                Tuition Fee Payment Required
+              </h3>
+              <p className="text-xs text-slate-500 max-w-md mx-auto">
+                Congratulations! Your admission has been granted. Please note your official Admission Number and submit tuition payment.
+              </p>
+            </div>
+
+            {/* Admission Number Card */}
+            <div className="bg-gradient-to-br from-[#0a192f] via-[#25166B] to-[#0a192f] p-4 rounded-2xl text-center text-white border-2 border-[#FFC600] shadow-md space-y-1">
+              <span className="text-[10px] font-black uppercase text-[#FFC600] tracking-widest block">
+                Official Student ID / Admission Number
+              </span>
+              <div className="font-mono text-2xl sm:text-3xl font-black text-white tracking-wider">
+                {registrationResult.student_id}
+              </div>
+              <span className="inline-block px-3 py-0.5 rounded-full text-[10px] font-bold bg-amber-400 text-[#0a192f]">
+                Status: Payment Required (₦20,000)
+              </span>
+            </div>
+
+            {/* Access Policy Explanatory Note */}
+            <div className="p-3 bg-amber-50 rounded-xl border border-amber-300 flex items-start gap-2.5 text-xs text-amber-950">
+              <Lock className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
+              <p className="leading-snug">
+                <strong>Portal Access Policy:</strong> You have immediate access to sign into your Student Portal, but all features (CBT Mocks, Past Question Banks, Study Handouts, and Student ID Card) will remain locked until the Directorate Admin approves your payment from the Admin Dashboard.
+              </p>
+            </div>
+
+            {/* Academy Bank Account Info */}
+            <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-2 text-xs">
+              <div className="flex items-center justify-between border-b border-slate-200 pb-2">
+                <span className="font-black text-[#25166B] uppercase text-[11px]">Official Academy Bank Account</span>
+                <span className="text-[10px] text-slate-500 font-bold">Moniepoint MFB</span>
+              </div>
+              <div className="grid grid-cols-2 gap-2 pt-1 text-[11px]">
+                <div>
+                  <span className="text-slate-400 block text-[10px]">Account Name</span>
+                  <strong className="text-slate-900 font-bold">De Ensured Consult Academy</strong>
+                </div>
+                <div>
+                  <span className="text-slate-400 block text-[10px]">Account Number</span>
+                  <strong className="text-[#0284c7] font-mono text-sm font-black">8147896930</strong>
+                </div>
+              </div>
+            </div>
+
+            {/* Payment Form inside Pop-up */}
+            {!paySubmitted ? (
+              <form onSubmit={handleSubmitInitialPayment} className="space-y-3.5">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">Tuition Fee Amount</label>
+                    <input
+                      type="text"
+                      value="₦20,000"
+                      disabled
+                      className="w-full px-3 py-2 rounded-xl bg-slate-100 border border-slate-300 font-bold text-slate-800 text-xs cursor-not-allowed"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">Payment Method</label>
+                    <select
+                      value={payMethod}
+                      onChange={(e) => setPayMethod(e.target.value as any)}
+                      className="w-full px-3 py-2 rounded-xl bg-white border border-slate-300 font-bold text-slate-800 text-xs outline-hidden"
+                    >
+                      <option value="Bank Transfer">Bank Transfer</option>
+                      <option value="Bank Deposit">Bank Deposit</option>
+                      <option value="POS / Cash">POS / Cash Deposit</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    Transfer Reference / Transaction ID / Teller No *
+                  </label>
+                  <input
+                    type="text"
+                    value={payRef}
+                    onChange={(e) => setPayRef(e.target.value)}
+                    placeholder="e.g. TRF/MP/98342019482 or Session Deposit Teller ID"
+                    required
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-amber-300 font-mono font-bold text-slate-900 text-xs outline-hidden focus:border-[#0284c7]"
+                  />
+                </div>
+
+                <div className="flex flex-col sm:flex-row gap-2 pt-1">
+                  <button
+                    type="submit"
+                    disabled={paySubmitting}
+                    className="flex-1 py-3 rounded-xl bg-[#028D3B] hover:bg-[#027531] disabled:opacity-50 text-white font-black text-xs uppercase tracking-wider shadow-md transition-all cursor-pointer flex items-center justify-center gap-1.5"
+                  >
+                    {paySubmitting ? (
+                      <>
+                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                        <span>Submitting...</span>
+                      </>
+                    ) : (
+                      <>
+                        <CheckCircle2 className="w-4 h-4" />
+                        <span>Submit Tuition Payment</span>
+                      </>
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowTuitionModal(false);
+                      setCurrentPage('student-login');
+                    }}
+                    className="px-4 py-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition-colors cursor-pointer text-center"
+                  >
+                    Pay Later / Sign In
+                  </button>
+                </div>
+              </form>
+            ) : (
+              <div className="p-4 bg-emerald-50 rounded-2xl border border-emerald-300 text-emerald-900 text-xs space-y-3 text-center">
+                <div className="flex items-center justify-center gap-2 font-black text-sm text-emerald-800">
+                  <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+                  <span>Tuition Payment Reference Logged!</span>
+                </div>
+                <p className="text-[11px] text-emerald-700 leading-relaxed">
+                  Your transfer reference <strong>{payRef}</strong> has been logged and sent to the Admin Dashboard for clearance. Once the Admin approves your payment, your verified receipt will be generated automatically and all learning features in your student portal will unlock.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowTuitionModal(false);
+                    setCurrentPage('student-login');
+                  }}
+                  className="w-full py-3 rounded-xl bg-[#25166B] hover:bg-[#1a0f4d] text-white font-black text-xs uppercase tracking-wider shadow-md transition-all cursor-pointer flex items-center justify-center gap-2"
+                >
+                  <span>Proceed to Student Portal Login</span>
+                  <ArrowRight className="w-4 h-4 text-[#FFC600]" />
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       <div className="max-w-4xl mx-auto space-y-8">
         {/* Header Banner */}
         <div className="text-center space-y-3">

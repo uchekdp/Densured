@@ -849,7 +849,7 @@ export const StudentPortal: React.FC = () => {
                 >
                   {tab.icon}
                   <span>{tab.label}</span>
-                  {!isSubscriptionActive && ['cbt-mocks', 'practice-sets', 'notes', 'progress', 'results', 'id-card'].includes(tab.id) && (
+                  {!isSubscriptionActive && ['cbt-mocks', 'practice-sets', 'notes', 'progress', 'results', 'id-card', 'attendance', 'timetables'].includes(tab.id) && (
                     <span className="text-amber-500 font-bold text-xs" title="Locked until ₦20,000 tuition approved">
                       🔒
                     </span>
@@ -1525,7 +1525,10 @@ export const StudentPortal: React.FC = () => {
 
         {/* TAB 4: ATTENDANCE RECORD */}
         {studentTab === 'attendance' && (
-          <div className="bg-white p-6 sm:p-8 rounded-3xl border border-slate-200 shadow-sm space-y-6">
+          !isSubscriptionActive ? (
+            <LockedFeatureNotice featureName="Daily Attendance Ledger" />
+          ) : (
+            <div className="bg-white p-6 sm:p-8 rounded-3xl border border-slate-200 shadow-sm space-y-6">
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-slate-200 pb-4">
               <div>
                 <h2 className="text-xl sm:text-2xl font-black text-[#0a192f]">Daily Attendance Record</h2>
@@ -1652,6 +1655,7 @@ export const StudentPortal: React.FC = () => {
               </table>
             </div>
           </div>
+          )
         )}
 
         {/* TAB 5: CBT & EXAMINATIONS: MOCK EXAMS (CBT) */}
@@ -2520,7 +2524,10 @@ export const StudentPortal: React.FC = () => {
 
         {/* TAB 8: TIMETABLES */}
         {studentTab === 'timetables' && (
-          <div className="bg-white p-6 sm:p-8 rounded-3xl border border-slate-200 shadow-sm space-y-6">
+          !isSubscriptionActive ? (
+            <LockedFeatureNotice featureName="Master Weekly Timetable" />
+          ) : (
+            <div className="bg-white p-6 sm:p-8 rounded-3xl border border-slate-200 shadow-sm space-y-6">
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-slate-200 pb-4">
               <div>
                 <h2 className="text-xl sm:text-2xl font-black text-[#0a192f]">Weekly Master Timetable</h2>
@@ -2564,6 +2571,7 @@ export const StudentPortal: React.FC = () => {
               ))}
             </div>
           </div>
+          )
         )}
 
         {/* TAB 9: LECTURE NOTES & STUDY MATERIALS */}
