@@ -347,7 +347,7 @@ function parseHashLocation(): { page: PageId; tab?: string } {
     if (pathname.includes('/materials')) return { page: 'admin-portal', tab: 'materials' };
     if (pathname.includes('/announcements')) return { page: 'admin-portal', tab: 'announcements' };
     if (pathname.includes('/progress')) return { page: 'admin-portal', tab: 'cbt-results' };
-    if (pathname.includes('/gallery') || pathname.includes('/videos')) return { page: 'admin-portal', tab: 'website-images' };
+    if (pathname.includes('/gallery') || pathname.includes('/videos')) return { page: 'admin-portal', tab: 'materials' };
     if (pathname.includes('/reports')) return { page: 'admin-portal', tab: 'general-reports' };
     if (pathname.includes('/settings')) return { page: 'admin-portal', tab: 'settings' };
     return { page: 'admin-portal', tab: 'students' };
@@ -2878,7 +2878,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const submission = monthlyPaymentSubmissions.find((m) => m.id === submissionId);
     if (!submission) return;
 
-    const updatedSub: MonthlyPaymentSubmission = { ...submission, status: 'Rejected' };
+    const nowFormatted = new Date().toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+    const finalReason = reason?.trim() || 'Payment details could not be verified against institutional bank statement.';
+
+    const updatedSub: MonthlyPaymentSubmission = {
+      ...submission,
+      status: 'Rejected',
+      rejectionReason: finalReason,
+      rejectedAt: nowFormatted,
+      rejectedBy: 'Mr. Akinjo Rotimi (Directorate Admin)',
+    };
     setMonthlyPaymentSubmissions((prev) =>
       prev.map((m) => (m.id === submissionId ? updatedSub : m))
     );
@@ -2887,7 +2896,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setStudentsList((prev) =>
       prev.map((s) => {
         if (s.id === submission.studentId) {
-          const updated: StudentProfile = { ...s, subscriptionStatus: 'Unpaid' };
+          const updated: StudentProfile = {
+            ...s,
+            subscriptionStatus: 'Unpaid',
+            paymentStatus: 'REJECTED',
+            rejectionReason: finalReason,
+          };
           setDoc(doc(db, 'students', s.id), updated, { merge: true }).catch(() => {});
           if (currentStudent && currentStudent.id === s.id) {
             setCurrentStudent(updated);
@@ -2898,8 +2912,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       })
     );
 
-    addAuditLog('Monthly Payment Rejected', `Rejected payment for ${submission.studentName}. Reason: ${reason || 'Unverified transfer'}`);
-    showToast('warning', 'Payment Rejected', `Payment for ${submission.studentName} was marked rejected.`);
+    addAuditLog('Monthly Payment Rejected', `Rejected payment for ${submission.studentName}. Reason: ${finalReason}`);
+    showToast('warning', 'Payment Rejected', `Payment for ${submission.studentName} was rejected: ${finalReason}`);
   };
 
   const addCBTExam = (exam: Omit<CBTExam, 'id'>) => {
@@ -3472,14 +3486,33 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const tx = transactions.find((t) => t.id === transactionId);
     if (!tx) return;
 
+    const nowFormatted = new Date().toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+    const finalReason = reason?.trim() || 'Payment details could not be verified against institutional bank statement.';
+
     setTransactions((prev) =>
-      prev.map((t) => (t.id === transactionId || t.reference === tx.reference ? { ...t, status: 'Failed' } : t))
+      prev.map((t) =>
+        t.id === transactionId || t.reference === tx.reference
+          ? {
+              ...t,
+              status: 'Failed',
+              rejectionReason: finalReason,
+              rejectedAt: nowFormatted,
+              rejectedBy: 'Mr. Akinjo Rotimi (Directorate Admin)',
+            }
+          : t
+      )
     );
 
     setMonthlyPaymentSubmissions((prev) =>
       prev.map((m) =>
         m.transactionReference === tx.reference || m.studentId === tx.studentId
-          ? { ...m, status: 'Rejected' }
+          ? {
+              ...m,
+              status: 'Rejected',
+              rejectionReason: finalReason,
+              rejectedAt: nowFormatted,
+              rejectedBy: 'Mr. Akinjo Rotimi (Directorate Admin)',
+            }
           : m
       )
     );
@@ -3491,6 +3524,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             ...s,
             paymentStatus: 'REJECTED',
             subscriptionStatus: 'Unpaid',
+            rejectionReason: finalReason,
           };
           if (currentStudent.id === s.id) {
             setCurrentStudent(updated);
@@ -3501,10 +3535,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       })
     );
 
-    setDoc(doc(db, 'payments', transactionId), { ...tx, status: 'Failed', rejectionReason: reason || '' }).catch(() => {});
+    setDoc(doc(db, 'payments', transactionId), {
+      ...tx,
+      status: 'Failed',
+      rejectionReason: finalReason,
+      rejectedAt: nowFormatted,
+      rejectedBy: 'Mr. Akinjo Rotimi (Directorate Admin)',
+    }).catch(() => {});
 
-    addAuditLog('Payment Rejected', `Payment #${tx.reference} for student ID ${tx.studentId} was rejected. ${reason || ''}`);
-    showToast('error', 'Payment Rejected', `Payment #${tx.reference} was rejected.`);
+    addAuditLog('Payment Rejected', `Payment #${tx.reference} for student ID ${tx.studentId} was rejected. Reason: ${finalReason}`);
+    showToast('error', 'Payment Rejected', `Payment #${tx.reference} was rejected: ${finalReason}`);
   };
 
   const deleteTransaction = (id: string) => {
@@ -3544,33 +3584,74 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const isStudentSubscriptionActive = (student: StudentProfile): boolean => {
     if (!student) return false;
 
-    // Check if student's explicit subscription status is Active (set upon payment approval)
-    const isExplicitActive =
-      student.subscriptionStatus === 'Active' ||
-      student.paymentStatus === 'APPROVED';
+    // Strict recurring monthly tuition access rule:
+    // Every student's approved tuition payment is valid only for the calendar month for which the payment was made.
+    // It expires automatically at 11:59:59 PM on the last day of that calendar month.
+    // A previous month's approval NEVER unlocks a new month's features.
+    const now = new Date();
+    const currentMonthName = now.toLocaleString('en-US', { month: 'long' });
+    const currentYear = now.getFullYear();
+    const currentMonthPeriod = `${currentMonthName} ${currentYear}`.toLowerCase();
 
-    // Check if there is an approved transaction in state for this student
-    const hasApprovedTx = transactions.some(
-      (t) =>
-        (t.studentId === student.id ||
-          t.studentId === student.registrationNumber ||
-          (t.studentName && t.studentName.toLowerCase().trim() === student.fullName.toLowerCase().trim())) &&
-        (t.status === 'Successful' || (t.status as string) === 'Approved')
+    // Check if the current month has already expired based on current time
+    const endOfCurrentMonth = new Date(currentYear, now.getMonth() + 1, 0, 23, 59, 59, 999);
+    if (now > endOfCurrentMonth) {
+      return false;
+    }
+
+    // Check if there is an approved monthly submission for the current calendar month
+    const hasApprovedCurrentMonthSubmission = (monthlyPaymentSubmissions || []).some((m) => {
+      const isStudentMatch =
+        m.studentId === student.id ||
+        m.registrationNumber === student.registrationNumber ||
+        (m.studentName && m.studentName.toLowerCase().trim() === student.fullName.toLowerCase().trim());
+      if (!isStudentMatch || m.status !== 'Approved') return false;
+
+      const subMonthPeriod = (m.monthPeriod || (m as any).tuitionMonth || '').toLowerCase().trim();
+      return (
+        subMonthPeriod.includes(currentMonthPeriod) ||
+        (subMonthPeriod.includes(currentMonthName.toLowerCase()) && subMonthPeriod.includes(String(currentYear)))
+      );
+    });
+
+    // Check if there is an approved transaction for the current calendar month
+    const hasApprovedCurrentMonthTx = (transactions || []).some((t) => {
+      const isStudentMatch =
+        t.studentId === student.id ||
+        t.studentId === student.registrationNumber ||
+        (t.studentName && t.studentName.toLowerCase().trim() === student.fullName.toLowerCase().trim());
+      if (!isStudentMatch) return false;
+      const isApproved = t.status === 'Successful' || (t.status as string) === 'Approved';
+      if (!isApproved) return false;
+
+      const txMonthPeriod = (t.monthPeriod || '').toLowerCase().trim();
+      const txTimestamp = t.timestamp ? new Date(t.timestamp) : null;
+      const isSameMonthDate =
+        txTimestamp &&
+        !isNaN(txTimestamp.getTime()) &&
+        txTimestamp.getMonth() === now.getMonth() &&
+        txTimestamp.getFullYear() === currentYear;
+
+      return (
+        txMonthPeriod.includes(currentMonthPeriod) ||
+        (txMonthPeriod.includes(currentMonthName.toLowerCase()) && txMonthPeriod.includes(String(currentYear))) ||
+        isSameMonthDate
+      );
+    });
+
+    // Also check student's explicit fields if they are specifically marked Active for current month
+    const studentSubscriptionMonth = (student.subscriptionMonth || (student as any).paymentMonth || '').toLowerCase();
+    const isStudentMarkedActiveForCurrentMonth =
+      (student.subscriptionStatus === 'Active' || student.paymentStatus === 'APPROVED') &&
+      (studentSubscriptionMonth.includes(currentMonthPeriod) ||
+        (studentSubscriptionMonth.includes(currentMonthName.toLowerCase()) &&
+          studentSubscriptionMonth.includes(String(currentYear))));
+
+    return Boolean(
+      hasApprovedCurrentMonthSubmission ||
+      hasApprovedCurrentMonthTx ||
+      isStudentMarkedActiveForCurrentMonth
     );
-
-    // Check if there is an approved monthly submission
-    const hasApprovedSubmission = monthlyPaymentSubmissions.some(
-      (m) =>
-        (m.studentId === student.id || m.registrationNumber === student.registrationNumber) &&
-        m.status === 'Approved'
-    );
-
-    // Check if there is an official receipt issued
-    const hasReceipt = officialReceipts.some(
-      (r) => r.studentId === student.id || r.registrationNumber === student.registrationNumber
-    );
-
-    return isExplicitActive || hasApprovedTx || hasApprovedSubmission || hasReceipt;
   };
 
   // Official Receipt Modal State

@@ -129,6 +129,8 @@ export const paymentApi = {
     paymentMonth: string;
     reference: string;
     method: string;
+    bankTellerNumber?: string;
+    paymentDate?: string;
     proofUrl?: string;
     notes?: string;
   }) =>
@@ -138,6 +140,7 @@ export const paymentApi = {
     }),
   getAllPayments: () => apiRequest('/admin/payments'),
   getAllReceipts: () => apiRequest('/admin/receipts'),
+  getAuditLogs: () => apiRequest('/admin/audit-logs'),
   approvePayment: (id: string) =>
     apiRequest(`/admin/payments/${id}/approve`, {
       method: 'POST',

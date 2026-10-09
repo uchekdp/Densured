@@ -78,6 +78,9 @@ export const StudentPortal: React.FC = () => {
     cbtAttempts,
     recordCBTAttempt,
     showToast,
+    monthlyPaymentSubmissions,
+    submitMonthlyPayment,
+    officialReceipts,
   } = useApp();
 
   // Monthly Tuition Subscription & Lock Gate State
@@ -88,6 +91,46 @@ export const StudentPortal: React.FC = () => {
         t.studentId === currentStudent.registrationNumber ||
         (t.studentName && t.studentName.toLowerCase().trim() === currentStudent.fullName.toLowerCase().trim())) &&
       t.status === 'Pending'
+  );
+
+  const pendingSub = (monthlyPaymentSubmissions || []).find(
+    (m) =>
+      (m.studentId === currentStudent.id ||
+        m.registrationNumber === currentStudent.registrationNumber ||
+        (m.studentName && m.studentName.toLowerCase().trim() === currentStudent.fullName.toLowerCase().trim())) &&
+      m.status === 'Pending'
+  );
+
+  const activePendingPayment = pendingSub
+    ? {
+        reference: pendingSub.transactionReference || pendingSub.referenceOrProof || 'DEC-PAY-REF',
+        amount: pendingSub.amount || currentStudent.monthlyFee || 20000,
+        date: pendingSub.paymentDate || (pendingSub.submittedAt ? pendingSub.submittedAt.split(',')[0] : 'Today'),
+        method: pendingSub.paymentMethod || 'Bank Transfer',
+        submittedAt: pendingSub.submittedAt || new Date().toLocaleString(),
+      }
+    : pendingTx
+    ? {
+        reference: pendingTx.reference || 'DEC-PAY-REF',
+        amount: pendingTx.amount || currentStudent.monthlyFee || 20000,
+        date: pendingTx.timestamp?.split(',')[0] || pendingTx.timestamp?.split(' ')[0] || 'Today',
+        method: pendingTx.paymentMethod || 'Bank Transfer',
+        submittedAt: pendingTx.timestamp || new Date().toLocaleString(),
+      }
+    : null;
+
+  const activeRejectedPayment = (monthlyPaymentSubmissions || []).find(
+    (m) =>
+      (m.studentId === currentStudent.id ||
+        m.registrationNumber === currentStudent.registrationNumber ||
+        (m.studentName && m.studentName.toLowerCase().trim() === currentStudent.fullName.toLowerCase().trim())) &&
+      m.status === 'Rejected'
+  ) || transactions.find(
+    (t) =>
+      (t.studentId === currentStudent.id ||
+        t.studentId === currentStudent.registrationNumber ||
+        (t.studentName && t.studentName.toLowerCase().trim() === currentStudent.fullName.toLowerCase().trim())) &&
+      (t.status === 'Failed' || (t as any).status === 'Rejected')
   );
 
   const now = new Date();
@@ -103,6 +146,18 @@ export const StudentPortal: React.FC = () => {
   const [isSubmittingMonthly, setIsSubmittingMonthly] = useState(false);
   const [idCardZoom, setIdCardZoom] = useState<number>(1.25);
   const [materialSubjectFilter, setMaterialSubjectFilter] = useState<string>('All');
+
+  // Tuition Payment Submission Form State (for student finance tab)
+  const [financePayShift, setFinancePayShift] = useState<StudentShift>(currentStudent.studentShift || 'Morning');
+  const [financePayMethod, setFinancePayMethod] = useState<string>('Bank Transfer');
+  const [financePayAmount, setFinancePayAmount] = useState<number>(currentStudent.monthlyFee || 20000);
+  const [financePayRef, setFinancePayRef] = useState<string>('');
+  const [financePayDate, setFinancePayDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [financePayerName, setFinancePayerName] = useState<string>(currentStudent.fullName);
+  const [financeProofUrl, setFinanceProofUrl] = useState<string>('');
+  const [financeRemarks, setFinanceRemarks] = useState<string>('');
+  const [isSubmittingTuition, setIsSubmittingTuition] = useState<boolean>(false);
+  const [showFinanceForm, setShowFinanceForm] = useState<boolean>(false);
 
   const isValidPhoto = (url?: any): boolean => {
     if (!url || typeof url !== 'string') return false;
@@ -347,8 +402,135 @@ export const StudentPortal: React.FC = () => {
   // Receipt Modal state for printable official receipt
   const [selectedReceiptTx, setSelectedReceiptTx] = useState<any | null>(null);
 
-  // Filter transactions for current student
-  const studentTransactions = transactions.filter((t) => t.studentId === currentStudent.id);
+  // Filter and consolidate transactions & payment submissions for current student
+  const studentTransactions = useMemo(() => {
+    const records: any[] = [];
+    const seenRefs = new Set<string>();
+
+    // 1. From monthlyPaymentSubmissions
+    (monthlyPaymentSubmissions || [])
+      .filter(
+        (m) =>
+          m.studentId === currentStudent.id ||
+          m.registrationNumber === currentStudent.registrationNumber ||
+          (m.studentName && m.studentName.toLowerCase().trim() === currentStudent.fullName.toLowerCase().trim())
+      )
+      .forEach((m) => {
+        const ref = m.transactionReference || m.referenceOrProof || m.id;
+        seenRefs.add(ref.toLowerCase().trim());
+        records.push({
+          id: m.id,
+          reference: ref,
+          receiptNumber: m.receiptNumber,
+          date: m.paymentDate || (m.submittedAt ? m.submittedAt.split(',')[0] : 'Today'),
+          timestamp: m.submittedAt,
+          approvedAt: m.approvedAt,
+          paymentMethod: m.paymentMethod,
+          amount: m.amount,
+          status: m.status === 'Approved' ? 'Successful' : m.status === 'Rejected' ? 'Failed' : 'Pending',
+          rawStatus: m.status,
+          rejectionReason: m.rejectionReason,
+          monthPeriod: m.monthPeriod,
+          studentShift: m.studentShift,
+        });
+      });
+
+    // 2. From transactions
+    (transactions || [])
+      .filter(
+        (t) =>
+          t.studentId === currentStudent.id ||
+          t.studentId === currentStudent.registrationNumber ||
+          (t.studentName && t.studentName.toLowerCase().trim() === currentStudent.fullName.toLowerCase().trim())
+      )
+      .forEach((t) => {
+        const ref = t.reference || t.id;
+        if (!seenRefs.has(ref.toLowerCase().trim())) {
+          seenRefs.add(ref.toLowerCase().trim());
+          records.push({
+            id: t.id,
+            reference: ref,
+            receiptNumber: t.receiptNumber,
+            date: t.date || (t.timestamp ? t.timestamp.split(',')[0] : 'Today'),
+            timestamp: t.timestamp,
+            approvedAt: t.approvedAt,
+            paymentMethod: t.paymentMethod,
+            amount: t.amount,
+            status: t.status,
+            rawStatus: t.status === 'Successful' ? 'Approved' : t.status === 'Failed' ? 'Rejected' : 'Pending',
+            rejectionReason: (t as any).rejectionReason,
+            monthPeriod: t.monthPeriod,
+            studentShift: t.studentShift,
+          });
+        }
+      });
+
+    return records;
+  }, [monthlyPaymentSubmissions, transactions, currentStudent]);
+
+  const handleProofFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (file.size > 5 * 1024 * 1024) {
+        showToast('error', 'File Too Large', 'Please upload an image smaller than 5MB.');
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        setFinanceProofUrl(ev.target?.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleFinancePaymentSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!financePayRef.trim()) {
+      showToast('error', 'Reference Required', 'Please enter your bank transfer reference or teller number.');
+      return;
+    }
+    setIsSubmittingTuition(true);
+    try {
+      const currentMonth = new Date().toLocaleString('en-US', { month: 'long', year: 'numeric' });
+
+      // 1. Submit through monthlyPaymentSubmissions
+      submitMonthlyPayment({
+        studentId: currentStudent.id,
+        studentName: currentStudent.fullName,
+        studentEmail: currentStudent.email,
+        studentPhone: currentStudent.phone,
+        program: currentStudent.program,
+        registrationNumber: currentStudent.registrationNumber,
+        monthPeriod: currentMonth,
+        amount: Number(financePayAmount) || currentStudent.monthlyFee || 20000,
+        paymentMethod: financePayMethod,
+        referenceOrProof: financePayRef.trim(),
+        transactionReference: financePayRef.trim(),
+        bankTellerNumber: financePayRef.trim(),
+        paymentDate: financePayDate,
+        proofUrl: financeProofUrl,
+        studentRemarks: financeRemarks,
+        studentShift: financePayShift,
+      });
+
+      // 2. Also record in transactions
+      submitMonthlyTuition(
+        currentStudent.id,
+        financePayShift,
+        financePayMethod as any
+      );
+
+      showToast('success', 'Tuition Payment Submitted', 'Payment information logged. Current status: Pending Approval.');
+      setShowFinanceForm(false);
+      setFinancePayRef('');
+      setFinanceRemarks('');
+      setFinanceProofUrl('');
+    } catch (err: any) {
+      showToast('error', 'Submission Failed', err.message || 'Could not submit payment.');
+    } finally {
+      setIsSubmittingTuition(false);
+    }
+  };
 
   // Countdown timer for CBT
   useEffect(() => {
@@ -494,9 +676,15 @@ export const StudentPortal: React.FC = () => {
           {featureName} is Locked
         </h3>
         <p className="text-slate-700 text-xs sm:text-sm font-medium leading-relaxed max-w-md mx-auto">
-          {pendingTx
-            ? 'Your ₦20,000 monthly tuition payment reference has been submitted and is currently awaiting verification by an administrator. Once approved, this feature will unlock automatically and your official receipt will be generated.'
-            : 'Your monthly tuition payment has not been approved. Please complete your ₦20,000 monthly payment to unlock this learning feature.'}
+          {activePendingPayment ? (
+            <span>
+              Your tuition payment information has been submitted and is currently awaiting administrative verification. All restricted features will unlock automatically as soon as your payment has been approved by the Directorate administrator.
+            </span>
+          ) : (
+            <span>
+              Your tuition payment for this month has not been approved. Your access to CBT practice, ID card services, study materials, and other restricted portal features is temporarily locked. Please pay your monthly tuition fee and submit your payment information. Your access will be restored automatically after the administrator approves your payment.
+            </span>
+          )}
         </p>
       </div>
 
@@ -510,36 +698,43 @@ export const StudentPortal: React.FC = () => {
           <strong className="font-mono text-[#0284c7]">{currentStudent.registrationNumber}</strong>
         </div>
         <div className="flex justify-between">
-          <span className="text-slate-500">Enrollment Status:</span>
-          <span className="px-2 py-0.5 rounded text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-300">
-            APPROVED
-          </span>
+          <span className="text-slate-500">Current Tuition Month:</span>
+          <strong className="text-slate-900 font-bold">{currentMonthPeriod}</strong>
         </div>
         <div className="flex justify-between">
-          <span className="text-slate-500">Monthly Payment Clearance:</span>
+          <span className="text-slate-500">Payment Status:</span>
           <span
-            className={`px-2 py-0.5 rounded text-[10px] font-black border ${
-              pendingTx
+            className={`px-2.5 py-0.5 rounded-full text-[10px] font-black border ${
+              activePendingPayment
                 ? 'bg-amber-100 text-amber-900 border-amber-300'
+                : activeRejectedPayment
+                ? 'bg-red-100 text-red-900 border-red-300'
                 : 'bg-red-100 text-red-900 border-red-300'
             }`}
           >
-            {pendingTx ? 'PENDING ADMIN APPROVAL' : 'PAYMENT REQUIRED'}
+            {activePendingPayment
+              ? 'Pending Approval'
+              : activeRejectedPayment
+              ? 'Rejected - Resubmission Required'
+              : 'Payment Required'}
           </span>
         </div>
         <div className="flex justify-between border-t border-slate-200 pt-2 font-bold">
-          <span className="text-slate-700">Monthly Tuition Fee:</span>
-          <span className="font-mono text-[#D5241B] text-sm">₦20,000</span>
+          <span className="text-slate-700">Amount Due for {currentMonthPeriod}:</span>
+          <span className="font-mono text-[#D5241B] text-sm">₦{(currentStudent.monthlyFee || 20000).toLocaleString()}</span>
         </div>
       </div>
 
       <button
         type="button"
-        onClick={() => setStudentTab('finance')}
+        onClick={() => {
+          setStudentTab('finance');
+          if (!activePendingPayment) setShowFinanceForm(true);
+        }}
         className="w-full sm:w-auto px-8 py-3.5 rounded-xl bg-[#ea580c] hover:bg-[#c2410c] text-white font-extrabold text-xs uppercase tracking-wider shadow-md transition-all flex items-center justify-center gap-2 mx-auto cursor-pointer"
       >
         <CreditCard className="w-4 h-4" />
-        <span>{pendingTx ? 'View Payment Status' : 'Pay ₦20,000 Monthly Tuition'}</span>
+        <span>{activePendingPayment ? 'View Pending Submission' : "Pay This Month's Tuition"}</span>
       </button>
     </div>
   );
@@ -802,27 +997,36 @@ export const StudentPortal: React.FC = () => {
               </div>
               <div>
                 <h3 className="font-extrabold text-slate-900 text-base">
-                  {currentStudent.paymentStatus === 'EXPIRED' || currentStudent.subscriptionStatus === 'Expired'
-                    ? 'Your monthly payment has expired.'
-                    : currentStudent.paymentStatus === 'PENDING' || currentStudent.subscriptionStatus === 'Pending Approval'
-                    ? 'Monthly payment pending admin approval.'
-                    : 'Your monthly payment has not been approved.'}
+                  {activePendingPayment
+                    ? 'Monthly tuition payment pending administrator approval.'
+                    : activeRejectedPayment
+                    ? 'Payment submission requires revision.'
+                    : 'Your student portal features are currently locked.'}
                 </h3>
                 <p className="text-slate-600 text-xs mt-0.5 leading-relaxed">
-                  Your monthly payment has not been approved. Please complete your ₦20,000 monthly payment to access this feature.
+                  {activePendingPayment
+                    ? 'Your payment information has been submitted and is currently awaiting administrative verification. Access will be granted after your payment has been approved.'
+                    : activeRejectedPayment
+                    ? `Reason: ${activeRejectedPayment.rejectionReason || 'Details unverified'}. Please review and resubmit your payment information.`
+                    : 'Your student portal features are currently locked. Please pay your tuition fee and submit your payment information for administrative verification. Access will be granted after your payment has been approved.'}
                 </p>
               </div>
             </div>
             <button
               type="button"
-              onClick={() => setStudentTab('finance')}
+              onClick={() => {
+                setStudentTab('finance');
+                if (!activePendingPayment) setShowFinanceForm(true);
+              }}
               className="px-5 py-2.5 rounded-xl bg-[#ea580c] hover:bg-[#c2410c] text-white text-xs font-bold shrink-0 transition-colors shadow-xs cursor-pointer flex items-center gap-1.5"
             >
               <CreditCard className="w-4 h-4" />
               <span>
-                {currentStudent.paymentStatus === 'PENDING' || currentStudent.subscriptionStatus === 'Pending Approval'
+                {activePendingPayment
                   ? 'View Payment Status'
-                  : 'Pay ₦20,000 Tuition'}
+                  : activeRejectedPayment
+                  ? 'Resubmit Tuition Payment'
+                  : 'Submit Tuition Payment'}
               </span>
             </button>
           </div>
@@ -872,6 +1076,103 @@ export const StudentPortal: React.FC = () => {
         {/* TAB 1: DASHBOARD */}
         {studentTab === 'dashboard' && (
           <div className="space-y-6">
+            {/* PENDING PAYMENT NOTIFICATION CARD */}
+            {activePendingPayment && !isSubscriptionActive && (
+              <div className="bg-amber-50 border-2 border-amber-300 rounded-3xl p-6 sm:p-7 shadow-sm space-y-4 animate-in fade-in">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-12 h-12 rounded-2xl bg-amber-500/15 text-amber-600 flex items-center justify-center shrink-0">
+                      <Clock className="w-6 h-6 text-amber-600" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full bg-amber-200 text-amber-900 border border-amber-400">
+                          Pending Approval
+                        </span>
+                        <span className="text-xs text-amber-800 font-bold">Directorate Verification Underway</span>
+                      </div>
+                      <h3 className="text-lg sm:text-xl font-black text-[#25166B] mt-1">
+                        Tuition Payment Information Submitted
+                      </h3>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setStudentTab('finance')}
+                    className="px-4 py-2 bg-[#25166B] hover:bg-[#1a0f4d] text-[#FFC600] rounded-xl text-xs font-bold cursor-pointer transition-colors shrink-0"
+                  >
+                    View Status &amp; Form →
+                  </button>
+                </div>
+
+                <p className="text-xs text-amber-900/90 leading-relaxed">
+                  An administrator is reviewing your payment. All tuition-protected features (CBT practice &amp; examinations, Student ID card generation, tuition receipts, study materials) remain locked until an administrator approves your payment. Once approved, full portal access will be granted automatically.
+                </p>
+
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 pt-1 text-xs">
+                  <div className="bg-white p-3 rounded-xl border border-amber-200">
+                    <span className="text-slate-500 text-[10px] block font-medium">Payment Reference</span>
+                    <span className="font-mono font-bold text-[#0284c7] text-xs truncate block">{activePendingPayment.reference}</span>
+                  </div>
+                  <div className="bg-white p-3 rounded-xl border border-amber-200">
+                    <span className="text-slate-500 text-[10px] block font-medium">Amount Submitted</span>
+                    <span className="font-mono font-bold text-slate-900 text-xs block">₦{activePendingPayment.amount.toLocaleString()}</span>
+                  </div>
+                  <div className="bg-white p-3 rounded-xl border border-amber-200">
+                    <span className="text-slate-500 text-[10px] block font-medium">Payment Date</span>
+                    <span className="font-bold text-slate-800 text-xs block">{activePendingPayment.date}</span>
+                  </div>
+                  <div className="bg-white p-3 rounded-xl border border-amber-200">
+                    <span className="text-slate-500 text-[10px] block font-medium">Payment Method</span>
+                    <span className="font-bold text-slate-800 text-xs block">{activePendingPayment.method}</span>
+                  </div>
+                  <div className="bg-white p-3 rounded-xl border border-amber-200 col-span-2 sm:col-span-1">
+                    <span className="text-slate-500 text-[10px] block font-medium">Date &amp; Time Submitted</span>
+                    <span className="font-bold text-slate-800 text-xs block">{activePendingPayment.submittedAt}</span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* UNPAID / LOCKED FEATURES NOTICE BANNER */}
+            {!isSubscriptionActive && !activePendingPayment && (
+              <div className="bg-gradient-to-r from-amber-50 to-orange-50 border-2 border-orange-300 rounded-3xl p-6 sm:p-7 shadow-sm space-y-4 animate-in fade-in">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-12 h-12 rounded-2xl bg-orange-500/15 text-orange-600 flex items-center justify-center shrink-0">
+                      <Lock className="w-6 h-6 text-orange-600" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-orange-200 text-orange-900 border border-orange-400">
+                          Portal Locked
+                        </span>
+                        {activeRejectedPayment && (
+                          <span className="text-xs text-red-600 font-bold">
+                            Previous submission declined: {activeRejectedPayment.rejectionReason}
+                          </span>
+                        )}
+                      </div>
+                      <h3 className="text-lg sm:text-xl font-black text-[#25166B] mt-1">
+                        Tuition Payment Required
+                      </h3>
+                      <p className="text-xs text-slate-700 mt-1 max-w-xl leading-relaxed">
+                        Your student portal features are currently locked. Please pay your tuition fee and submit your payment information for administrative verification. Access will be granted after your payment has been approved.
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setStudentTab('finance');
+                      setShowFinanceForm(true);
+                    }}
+                    className="px-6 py-3 rounded-xl bg-[#ea580c] hover:bg-[#c2410c] text-white font-extrabold text-xs uppercase tracking-wider shadow-md transition-all shrink-0 cursor-pointer flex items-center gap-2"
+                  >
+                    <CreditCard className="w-4 h-4" />
+                    <span>Submit Tuition Payment</span>
+                  </button>
+                </div>
+              </div>
+            )}
             {/* Hero Card */}
             <div className="bg-gradient-to-br from-[#0a192f] via-[#112240] to-[#0a192f] text-white rounded-3xl p-6 sm:p-8 shadow-xl border border-slate-800 relative overflow-hidden">
               <div className="relative z-10 flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
@@ -2712,53 +3013,333 @@ export const StudentPortal: React.FC = () => {
           <div className="bg-white p-6 sm:p-8 rounded-3xl border border-slate-200 shadow-sm space-y-6">
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-slate-200 pb-4">
               <div>
-                <h2 className="text-xl sm:text-2xl font-black text-[#0a192f]">Tuition Status & Official Receipts</h2>
+                <h2 className="text-xl sm:text-2xl font-black text-[#0a192f]">Tuition Status &amp; Official Receipts</h2>
                 <p className="text-slate-500 text-xs mt-0.5">
-                  Track fee installments, outstanding balance, and generate official payment receipts.
+                  View approved bank payment instructions, submit tuition payment for verification, track payment clearance, and download official receipts.
                 </p>
               </div>
 
-              {currentStudent.tuitionBalance > 0 && (
+              {!isSubscriptionActive && (
                 <button
-                  onClick={() => openPaymentModal(currentStudent.tuitionBalance, 'Tuition Balance Clearance')}
-                  className="px-5 py-2.5 rounded-xl bg-[#d97706] hover:bg-[#b45309] text-white font-black text-xs shadow-md cursor-pointer flex items-center gap-2"
+                  type="button"
+                  onClick={() => setShowFinanceForm(!showFinanceForm)}
+                  className="px-5 py-2.5 rounded-xl bg-[#028D3B] hover:bg-[#027531] text-white font-black text-xs shadow-md cursor-pointer flex items-center gap-2 transition-all"
                 >
                   <CreditCard className="w-4 h-4" />
-                  <span>Make Online Payment (Paystack)</span>
+                  <span>{showFinanceForm ? 'Hide Payment Form' : 'Submit Tuition Payment'}</span>
                 </button>
               )}
             </div>
 
-            {/* Monthly Tuition Subscription Badge & Official Receipt */}
-            <div className="bg-[#25166B]/5 border-2 border-[#25166B]/20 rounded-2xl p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-[#25166B] text-[#FFC600] flex items-center justify-center shrink-0">
-                  <ShieldCheck className="w-5 h-5 text-[#FFC600]" />
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="font-extrabold text-[#25166B] text-sm sm:text-base">
-                      Monthly Tuition Pass: {currentStudent.studentShift} Student
-                    </span>
-                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-[#028D3B] text-white">
-                      Directorate Cleared
-                    </span>
+            {/* STATUS NOTIFICATION 1: PENDING APPROVAL */}
+            {activePendingPayment && !isSubscriptionActive && (
+              <div className="bg-amber-50 border-2 border-amber-300 rounded-2xl p-5 sm:p-6 shadow-xs space-y-3 animate-in fade-in">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-amber-200 text-amber-800 flex items-center justify-center shrink-0">
+                      <Clock className="w-5 h-5 text-amber-800" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-amber-200 text-amber-900 border border-amber-400">
+                          Pending Approval
+                        </span>
+                        <span className="text-xs text-amber-800 font-bold">Tuition Verification In Progress</span>
+                      </div>
+                      <h4 className="font-extrabold text-[#25166B] text-base mt-0.5">
+                        Payment Awaiting Directorate Verification
+                      </h4>
+                    </div>
                   </div>
-                  <p className="text-xs text-slate-600 mt-0.5">
-                    Monthly Fee: <strong className="font-mono text-[#25166B]">₦{currentStudent.monthlyFee.toLocaleString()}/month</strong> • Current Cycle: <strong>{currentStudent.subscriptionMonth || currentStudent.paymentMonth || currentMonthPeriod}</strong> • Valid Until: <strong className="text-[#25166B]">{currentStudent.subscriptionExpiryDate || currentStudent.paymentExpiryDate || defaultEndOfMonth}</strong>
-                  </p>
+                </div>
+
+                <p className="text-xs text-amber-900/90 leading-relaxed">
+                  An administrator is currently reviewing your payment information against our institutional bank records. All tuition-protected portal features (CBT mock examinations, Student ID card printing, study materials, and official payment receipts) remain locked until an administrator approves your payment. Once approved, portal features unlock automatically.
+                </p>
+
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5 pt-1 text-xs">
+                  <div className="bg-white p-3 rounded-xl border border-amber-200">
+                    <span className="text-slate-500 text-[10px] block font-medium">Payment Reference</span>
+                    <span className="font-mono font-bold text-[#0284c7] text-xs truncate block">{activePendingPayment.reference}</span>
+                  </div>
+                  <div className="bg-white p-3 rounded-xl border border-amber-200">
+                    <span className="text-slate-500 text-[10px] block font-medium">Amount Submitted</span>
+                    <span className="font-mono font-bold text-slate-900 text-xs block">₦{activePendingPayment.amount.toLocaleString()}</span>
+                  </div>
+                  <div className="bg-white p-3 rounded-xl border border-amber-200">
+                    <span className="text-slate-500 text-[10px] block font-medium">Payment Date</span>
+                    <span className="font-bold text-slate-800 text-xs block">{activePendingPayment.date}</span>
+                  </div>
+                  <div className="bg-white p-3 rounded-xl border border-amber-200">
+                    <span className="text-slate-500 text-[10px] block font-medium">Payment Method</span>
+                    <span className="font-bold text-slate-800 text-xs block">{activePendingPayment.method}</span>
+                  </div>
+                  <div className="bg-white p-3 rounded-xl border border-amber-200 col-span-2 sm:col-span-1">
+                    <span className="text-slate-500 text-[10px] block font-medium">Date &amp; Time Submitted</span>
+                    <span className="font-bold text-slate-800 text-xs block">{activePendingPayment.submittedAt}</span>
+                  </div>
                 </div>
               </div>
+            )}
 
-              <button
-                type="button"
-                onClick={() => handleOpenOfficialReceipt()}
-                className="px-4 py-2.5 rounded-xl bg-[#25166B] hover:bg-[#1c1152] text-[#FFC600] font-black text-xs cursor-pointer flex items-center gap-2 shadow-xs shrink-0 transition-colors"
-              >
-                <QrCode className="w-4 h-4 text-[#FFC600]" />
-                <span>View Official Receipt (with QR Code)</span>
-              </button>
+            {/* STATUS NOTIFICATION 2: REJECTED / NEEDS RESUBMISSION */}
+            {activeRejectedPayment && !activePendingPayment && !isSubscriptionActive && (
+              <div className="bg-red-50 border-2 border-red-300 rounded-2xl p-5 sm:p-6 shadow-xs space-y-3 animate-in fade-in">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-red-100 text-red-600 flex items-center justify-center shrink-0">
+                    <AlertCircle className="w-5 h-5 text-red-600" />
+                  </div>
+                  <div>
+                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-red-200 text-red-900 border border-red-400">
+                      Payment Verification Declined
+                    </span>
+                    <h4 className="font-extrabold text-red-900 text-base mt-0.5">
+                      Previous Payment Submission Could Not Be Verified
+                    </h4>
+                  </div>
+                </div>
+                <p className="text-xs text-red-800 leading-relaxed">
+                  <strong>Reason:</strong> {activeRejectedPayment.rejectionReason || 'The transaction reference could not be matched with bank deposits.'}. Please verify your payment details with your bank, then resubmit your corrected transfer reference or proof below.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setShowFinanceForm(true)}
+                  className="px-4 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold text-xs cursor-pointer inline-flex items-center gap-2"
+                >
+                  <CreditCard className="w-4 h-4" />
+                  <span>Open Resubmission Form</span>
+                </button>
+              </div>
+            )}
+
+            {/* STATUS NOTIFICATION 3: APPROVED & ACTIVE */}
+            {isSubscriptionActive && (
+              <div className="bg-[#028D3B]/10 border-2 border-[#028D3B]/30 rounded-2xl p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-[#028D3B] text-white flex items-center justify-center shrink-0">
+                    <ShieldCheck className="w-5 h-5 text-white" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-extrabold text-[#25166B] text-sm sm:text-base">
+                        Monthly Tuition Pass: {currentStudent.studentShift} Shift
+                      </span>
+                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-[#028D3B] text-white">
+                        Directorate Cleared
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-600 mt-0.5">
+                      Monthly Fee: <strong className="font-mono text-[#25166B]">₦{(currentStudent.monthlyFee || 20000).toLocaleString()}/month</strong> • Current Cycle: <strong>{currentStudent.subscriptionMonth || currentStudent.paymentMonth || currentMonthPeriod}</strong> • Valid Until: <strong className="text-[#25166B]">{currentStudent.subscriptionExpiryDate || currentStudent.paymentExpiryDate || defaultEndOfMonth}</strong>
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => handleOpenOfficialReceipt()}
+                  className="px-4 py-2.5 rounded-xl bg-[#25166B] hover:bg-[#1c1152] text-[#FFC600] font-black text-xs cursor-pointer flex items-center gap-2 shadow-xs shrink-0 transition-colors"
+                >
+                  <QrCode className="w-4 h-4 text-[#FFC600]" />
+                  <span>View Official Receipt (with QR Code)</span>
+                </button>
+              </div>
+            )}
+
+            {/* APPROVED BANK ACCOUNT DETAILS (Retrieved from school settings) */}
+            <div className="bg-slate-50 p-5 rounded-2xl border border-slate-200 space-y-3 text-xs">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 border-b border-slate-200 pb-2">
+                <div className="flex items-center gap-2">
+                  <DollarSign className="w-4 h-4 text-[#25166B]" />
+                  <span className="font-black text-[#25166B] uppercase text-xs">Approved Institutional Bank Account Details</span>
+                </div>
+                <span className="text-[10px] font-bold text-slate-500 bg-white px-2 py-0.5 rounded border border-slate-200">
+                  Moniepoint MFB Official Account
+                </span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
+                <div className="bg-white p-3 rounded-xl border border-slate-200">
+                  <span className="text-slate-400 block text-[10px] uppercase font-bold">Bank Name</span>
+                  <strong className="text-slate-900 font-bold text-sm">Moniepoint MFB</strong>
+                </div>
+                <div className="bg-white p-3 rounded-xl border border-slate-200">
+                  <span className="text-slate-400 block text-[10px] uppercase font-bold">Account Name</span>
+                  <strong className="text-slate-900 font-bold text-sm">De Ensured Consult Academy</strong>
+                </div>
+                <div className="bg-white p-3 rounded-xl border border-slate-200">
+                  <span className="text-slate-400 block text-[10px] uppercase font-bold">Account Number</span>
+                  <strong className="text-[#0284c7] font-mono text-base font-black">8147896930</strong>
+                </div>
+              </div>
+              <p className="text-[11px] text-slate-500 leading-relaxed">
+                <strong>Payment Instructions:</strong> Transfer your monthly tuition of <strong>₦{(currentStudent.monthlyFee || 20000).toLocaleString()}</strong> to the approved account above using your mobile banking app, USSD, or direct deposit. After successful transfer, complete the submission form below with your transfer reference number.
+              </p>
             </div>
+
+            {/* TUITION PAYMENT SUBMISSION FORM */}
+            {(!isSubscriptionActive || showFinanceForm) && (
+              <div className="bg-white rounded-2xl border-2 border-[#25166B]/30 p-5 sm:p-6 shadow-sm space-y-4 animate-in fade-in duration-200">
+                <div className="flex items-center justify-between border-b border-slate-200 pb-3">
+                  <div className="flex items-center gap-2">
+                    <span className="p-1.5 rounded-lg bg-[#25166B] text-[#FFC600]">
+                      <CreditCard className="w-4 h-4 text-[#FFC600]" />
+                    </span>
+                    <h3 className="font-extrabold text-[#25166B] text-base">
+                      Tuition Payment Submission Form
+                    </h3>
+                  </div>
+                  <span className="text-[10px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+                    Administrative Verification
+                  </span>
+                </div>
+
+                <form onSubmit={handleFinancePaymentSubmit} className="space-y-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                    {/* Candidate Name (read-only) */}
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-600 mb-1">Student Full Name</label>
+                      <input
+                        type="text"
+                        value={currentStudent.fullName}
+                        readOnly
+                        className="w-full px-3 py-2 rounded-xl bg-slate-100 border border-slate-200 text-xs font-bold text-slate-700 outline-hidden"
+                      />
+                    </div>
+
+                    {/* Registration Number (read-only) */}
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-600 mb-1">Admission Number / Reg No</label>
+                      <input
+                        type="text"
+                        value={currentStudent.registrationNumber}
+                        readOnly
+                        className="w-full px-3 py-2 rounded-xl bg-slate-100 border border-slate-200 text-xs font-mono font-bold text-[#0284c7] outline-hidden"
+                      />
+                    </div>
+
+                    {/* Shift Selection */}
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-600 mb-1">Lecture Shift</label>
+                      <select
+                        value={financePayShift}
+                        onChange={(e) => setFinancePayShift(e.target.value as StudentShift)}
+                        className="w-full px-3 py-2 rounded-xl bg-white border border-slate-300 text-xs font-bold text-slate-800 outline-hidden focus:border-[#25166B]"
+                      >
+                        <option value="Morning">Morning Shift (₦20,000 / month)</option>
+                        <option value="Afternoon">Afternoon Shift (₦20,000 / month)</option>
+                        <option value="Evening">Evening / Weekend Shift (₦20,000 / month)</option>
+                      </select>
+                    </div>
+
+                    {/* Amount Paid */}
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-600 mb-1">Amount Paid (₦)</label>
+                      <input
+                        type="number"
+                        value={financePayAmount}
+                        onChange={(e) => setFinancePayAmount(Number(e.target.value))}
+                        className="w-full px-3 py-2 rounded-xl bg-white border border-slate-300 text-xs font-mono font-bold text-slate-800 outline-hidden focus:border-[#25166B]"
+                      />
+                    </div>
+
+                    {/* Payment Method */}
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-600 mb-1">Payment Method</label>
+                      <select
+                        value={financePayMethod}
+                        onChange={(e) => setFinancePayMethod(e.target.value)}
+                        className="w-full px-3 py-2 rounded-xl bg-white border border-slate-300 text-xs font-bold text-slate-800 outline-hidden focus:border-[#25166B]"
+                      >
+                        <option value="Bank Transfer">Bank Transfer (Mobile App / USSD)</option>
+                        <option value="Bank Deposit">Bank Deposit (Teller)</option>
+                        <option value="POS / Cash">POS / Cash at Center</option>
+                      </select>
+                    </div>
+
+                    {/* Payment Date */}
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-600 mb-1">Payment Date</label>
+                      <input
+                        type="date"
+                        value={financePayDate}
+                        onChange={(e) => setFinancePayDate(e.target.value)}
+                        className="w-full px-3 py-2 rounded-xl bg-white border border-slate-300 text-xs font-medium text-slate-800 outline-hidden focus:border-[#25166B]"
+                      />
+                    </div>
+
+                    {/* Transfer Reference / Teller Number */}
+                    <div className="sm:col-span-2">
+                      <label className="block text-[10px] font-bold text-slate-600 mb-1">
+                        Bank Transfer Reference / Teller Number <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={financePayRef}
+                        onChange={(e) => setFinancePayRef(e.target.value)}
+                        placeholder="e.g. TRF/MP/98342019482 or Session Teller No."
+                        className="w-full px-3 py-2 rounded-xl bg-white border border-slate-300 text-xs font-mono font-bold text-[#0284c7] outline-hidden focus:border-[#0284c7]"
+                      />
+                    </div>
+
+                    {/* Payer / Depositor Name */}
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-600 mb-1">Depositor / Payer Name</label>
+                      <input
+                        type="text"
+                        value={financePayerName}
+                        onChange={(e) => setFinancePayerName(e.target.value)}
+                        placeholder="Name on bank account"
+                        className="w-full px-3 py-2 rounded-xl bg-white border border-slate-300 text-xs font-medium text-slate-800 outline-hidden focus:border-[#25166B]"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Proof of Payment Upload */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-600 mb-1">
+                        Attach Proof of Payment (Receipt Screenshot / Teller Image)
+                      </label>
+                      <input
+                        type="file"
+                        accept="image/*,.pdf"
+                        onChange={handleProofFileUpload}
+                        className="w-full text-xs text-slate-500 file:mr-3 file:py-1.5 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-[#25166B] file:text-[#FFC600] hover:file:bg-[#1a0f4d] cursor-pointer"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-600 mb-1">Additional Remarks (Optional)</label>
+                      <input
+                        type="text"
+                        value={financeRemarks}
+                        onChange={(e) => setFinanceRemarks(e.target.value)}
+                        placeholder="e.g. Paid from GTBank account ending 4821"
+                        className="w-full px-3 py-2 rounded-xl bg-white border border-slate-300 text-xs text-slate-800 outline-hidden focus:border-[#25166B]"
+                      />
+                    </div>
+                  </div>
+
+                  {financeProofUrl && (
+                    <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 flex items-center gap-3">
+                      <img src={financeProofUrl} alt="Proof" className="w-12 h-12 rounded object-cover border" />
+                      <span className="text-xs text-emerald-700 font-bold">Proof of payment image attached successfully.</span>
+                    </div>
+                  )}
+
+                  <div className="pt-2 flex justify-end">
+                    <button
+                      type="submit"
+                      disabled={isSubmittingTuition}
+                      className="w-full sm:w-auto px-8 py-3 rounded-xl bg-[#028D3B] hover:bg-[#027531] disabled:opacity-50 text-white font-black text-xs uppercase tracking-wider shadow-md transition-all cursor-pointer flex items-center justify-center gap-2"
+                    >
+                      <CheckCircle2 className="w-4 h-4" />
+                      <span>{isSubmittingTuition ? 'Submitting Payment...' : 'Submit Tuition Payment for Administrative Verification'}</span>
+                    </button>
+                  </div>
+                </form>
+              </div>
+            )}
 
             {/* Tuition Breakdown Card */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -2789,26 +3370,193 @@ export const StudentPortal: React.FC = () => {
               </div>
             </div>
 
+            {/* 8. MONTHLY TUITION SCHEDULE & ACCESS STATUS TABLE (Prompt Requirement 8) */}
+            <div className="space-y-3 pt-2">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-200 pb-2">
+                <div>
+                  <h3 className="font-extrabold text-[#0a192f] text-base">Monthly Tuition &amp; Feature Access Schedule</h3>
+                  <p className="text-slate-500 text-xs">
+                    Tuition is valid strictly for the assigned calendar month. Access to restricted features expires automatically at month-end.
+                  </p>
+                </div>
+                <span className="text-[11px] font-bold text-[#0284c7] bg-sky-50 px-3 py-1 rounded-full border border-sky-200 self-start sm:self-auto">
+                  Configured Rate: ₦{(currentStudent.monthlyFee || 20000).toLocaleString()}/month
+                </span>
+              </div>
+
+              <div className="overflow-x-auto rounded-2xl border border-slate-200">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-[#0a192f] text-white font-black uppercase text-[10px] tracking-wider">
+                    <tr>
+                      <th className="py-3 px-4">Tuition Month</th>
+                      <th className="py-3 px-4">Configured Fee</th>
+                      <th className="py-3 px-4">Payment Status</th>
+                      <th className="py-3 px-4">Portal Access</th>
+                      <th className="py-3 px-4 text-right">Official Receipt / Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 font-medium bg-white text-slate-700">
+                    {(() => {
+                      const monthsToDisplay = [
+                        { name: 'October 2026', isCurrent: currentMonthPeriod === 'October 2026', isPast: false },
+                        { name: 'November 2026', isCurrent: currentMonthPeriod === 'November 2026', isPast: false },
+                        { name: 'December 2026', isCurrent: currentMonthPeriod === 'December 2026', isPast: false },
+                      ];
+
+                      // Ensure current month is represented
+                      if (!monthsToDisplay.some((m) => m.name === currentMonthPeriod)) {
+                        monthsToDisplay.unshift({ name: currentMonthPeriod, isCurrent: true, isPast: false });
+                      }
+
+                      return monthsToDisplay.map((mPeriod, idx) => {
+                        const approvedSub = (monthlyPaymentSubmissions || []).find(
+                          (m) =>
+                            (m.studentId === currentStudent.id || m.registrationNumber === currentStudent.registrationNumber) &&
+                            m.status === 'Approved' &&
+                            (m.monthPeriod?.toLowerCase() === mPeriod.name.toLowerCase() || (m as any).tuitionMonth?.toLowerCase() === mPeriod.name.toLowerCase())
+                        );
+
+                        const approvedTx = (transactions || []).find(
+                          (t) =>
+                            (t.studentId === currentStudent.id || t.studentId === currentStudent.registrationNumber) &&
+                            (t.status === 'Successful' || (t.status as string) === 'Approved') &&
+                            t.monthPeriod?.toLowerCase() === mPeriod.name.toLowerCase()
+                        );
+
+                        const pending = (monthlyPaymentSubmissions || []).find(
+                          (m) =>
+                            (m.studentId === currentStudent.id || m.registrationNumber === currentStudent.registrationNumber) &&
+                            m.status === 'Pending' &&
+                            (m.monthPeriod?.toLowerCase() === mPeriod.name.toLowerCase() || (m as any).tuitionMonth?.toLowerCase() === mPeriod.name.toLowerCase())
+                        ) || (transactions || []).find(
+                          (t) =>
+                            (t.studentId === currentStudent.id || t.studentId === currentStudent.registrationNumber) &&
+                            t.status === 'Pending' &&
+                            t.monthPeriod?.toLowerCase() === mPeriod.name.toLowerCase()
+                        );
+
+                        const rejected = (monthlyPaymentSubmissions || []).find(
+                          (m) =>
+                            (m.studentId === currentStudent.id || m.registrationNumber === currentStudent.registrationNumber) &&
+                            m.status === 'Rejected' &&
+                            (m.monthPeriod?.toLowerCase() === mPeriod.name.toLowerCase() || (m as any).tuitionMonth?.toLowerCase() === mPeriod.name.toLowerCase())
+                        );
+
+                        const isApproved = Boolean(approvedSub || approvedTx);
+                        const isCurrentActive = isApproved && mPeriod.isCurrent;
+                        const isExpired = isApproved && !mPeriod.isCurrent;
+
+                        let statusLabel = 'Payment Required';
+                        let statusColor = 'bg-slate-100 text-slate-700 border-slate-300';
+                        let accessLabel = 'Locked';
+                        let accessColor = 'bg-red-50 text-red-700 border-red-200';
+
+                        if (isCurrentActive) {
+                          statusLabel = 'Approved';
+                          statusColor = 'bg-emerald-100 text-emerald-800 border-emerald-300';
+                          accessLabel = `Active for ${mPeriod.name.split(' ')[0]}`;
+                          accessColor = 'bg-emerald-50 text-emerald-700 border-emerald-300 font-bold';
+                        } else if (isExpired) {
+                          statusLabel = 'Approved';
+                          statusColor = 'bg-emerald-100 text-emerald-800 border-emerald-300';
+                          accessLabel = `Expired after ${mPeriod.name.split(' ')[0]}`;
+                          accessColor = 'bg-amber-50 text-amber-800 border-amber-300 font-bold';
+                        } else if (pending) {
+                          statusLabel = 'Pending Approval';
+                          statusColor = 'bg-amber-100 text-amber-800 border-amber-300';
+                          accessLabel = 'Locked';
+                          accessColor = 'bg-amber-50 text-amber-800 border-amber-200';
+                        } else if (rejected) {
+                          statusLabel = 'Rejected';
+                          statusColor = 'bg-red-100 text-red-800 border-red-300';
+                          accessLabel = 'Locked';
+                          accessColor = 'bg-red-50 text-red-700 border-red-200';
+                        }
+
+                        return (
+                          <tr key={idx} className="hover:bg-slate-50 transition-colors">
+                            <td className="py-3 px-4 font-bold text-[#0a192f]">
+                              <div className="flex items-center gap-2">
+                                <span>{mPeriod.name}</span>
+                                {mPeriod.isCurrent && (
+                                  <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-[#25166B] text-white">
+                                    Current
+                                  </span>
+                                )}
+                              </div>
+                            </td>
+                            <td className="py-3 px-4 font-mono font-bold text-slate-800">
+                              ₦{(currentStudent.monthlyFee || 20000).toLocaleString()}
+                            </td>
+                            <td className="py-3 px-4">
+                              <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${statusColor}`}>
+                                {statusLabel}
+                              </span>
+                            </td>
+                            <td className="py-3 px-4">
+                              <span className={`px-2.5 py-0.5 rounded text-[10px] border ${accessColor}`}>
+                                {accessLabel}
+                              </span>
+                            </td>
+                            <td className="py-3 px-4 text-right">
+                              {isApproved ? (
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenOfficialReceipt(approvedTx || approvedSub)}
+                                  className="px-3 py-1.5 rounded-lg bg-[#25166B] hover:bg-[#1c1152] text-[#FFC600] text-xs font-bold cursor-pointer transition-all inline-flex items-center gap-1.5 shadow-2xs"
+                                >
+                                  <FileText className="w-3.5 h-3.5 text-[#FFC600]" />
+                                  <span>View Receipt</span>
+                                </button>
+                              ) : pending ? (
+                                <span className="text-[11px] text-amber-700 font-bold italic">
+                                  Verification in progress
+                                </span>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => setShowFinanceForm(true)}
+                                  className="px-3 py-1.5 rounded-lg bg-[#ea580c] hover:bg-[#c2410c] text-white text-xs font-bold cursor-pointer transition-all inline-flex items-center gap-1 shadow-2xs"
+                                >
+                                  <CreditCard className="w-3.5 h-3.5" />
+                                  <span>Pay This Month</span>
+                                </button>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      });
+                    })()}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
             {/* Payment Transactions & Receipts Table */}
             <div className="space-y-4 pt-4">
-              <h3 className="font-extrabold text-[#0a192f] text-base">Payment History & Verified Receipts</h3>
+              <div className="flex items-center justify-between">
+                <h3 className="font-extrabold text-[#0a192f] text-base">Payment History &amp; Verified Receipts</h3>
+                <span className="text-xs text-slate-500 font-medium">{studentTransactions.length} recorded payments</span>
+              </div>
 
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-xs">
                   <thead className="bg-slate-50 text-slate-600 font-bold border-b border-slate-200 uppercase text-[11px]">
                     <tr>
-                      <th className="py-3 px-4">Receipt Reference</th>
-                      <th className="py-3 px-4">Date & Time</th>
+                      <th className="py-3 px-4">Receipt / Reference</th>
+                      <th className="py-3 px-4">Date &amp; Time</th>
                       <th className="py-3 px-4">Channel</th>
                       <th className="py-3 px-4">Amount</th>
                       <th className="py-3 px-4">Status</th>
-                      <th className="py-3 px-4 text-right">Receipt Action</th>
+                      <th className="py-3 px-4 text-right">Action</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
                     {studentTransactions.length > 0 ? (
                       studentTransactions.map((tx) => {
-                        const isApproved = tx.status === 'Successful';
+                        const isApproved = tx.status === 'Successful' || tx.rawStatus === 'Approved';
+                        const isPending = tx.status === 'Pending' || tx.rawStatus === 'Pending';
+                        const isRejected = tx.status === 'Failed' || tx.rawStatus === 'Rejected';
 
                         return (
                           <tr key={tx.id} className="hover:bg-slate-50">
@@ -2825,10 +3573,16 @@ export const StudentPortal: React.FC = () => {
                                 className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
                                   isApproved
                                     ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
-                                    : 'bg-amber-100 text-amber-800 border border-amber-300'
+                                    : isPending
+                                    ? 'bg-amber-100 text-amber-800 border border-amber-300'
+                                    : 'bg-red-100 text-red-800 border border-red-300'
                                 }`}
                               >
-                                {isApproved ? 'Approved by Admin' : 'Pending Admin Clearance'}
+                                {isApproved
+                                  ? 'Approved by Admin'
+                                  : isPending
+                                  ? 'Pending Approval'
+                                  : 'Declined'}
                               </span>
                             </td>
                             <td className="py-3.5 px-4 text-right">
@@ -2841,9 +3595,17 @@ export const StudentPortal: React.FC = () => {
                                   <FileText className="w-3.5 h-3.5 text-[#FFC600]" />
                                   <span>View Receipt (with QR)</span>
                                 </button>
+                              ) : isRejected ? (
+                                <button
+                                  type="button"
+                                  onClick={() => setShowFinanceForm(true)}
+                                  className="px-2.5 py-1 rounded-lg bg-red-100 text-red-700 hover:bg-red-200 text-[11px] font-bold cursor-pointer transition-colors"
+                                >
+                                  Resubmit Payment
+                                </button>
                               ) : (
                                 <span className="text-[11px] text-amber-700 font-bold italic">
-                                  Awaiting Clearance
+                                  Awaiting Review
                                 </span>
                               )}
                             </td>
@@ -2856,7 +3618,7 @@ export const StudentPortal: React.FC = () => {
                           <div className="max-w-md mx-auto space-y-2">
                             <p className="font-bold text-slate-700 text-sm">No Recorded Payment History Yet</p>
                             <p className="text-slate-400 text-xs">
-                              All initial dummy payments have been removed. Once you make your tuition payment and it is approved by the admin, your official verified receipt will appear here.
+                              Submit your monthly tuition payment above. Once verified and approved by an administrator, your official receipt with QR code will be generated and available for download.
                             </p>
                           </div>
                         </td>

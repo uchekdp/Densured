@@ -107,5 +107,11 @@ service cloud.firestore {
       allow read: if true;
       allow create, update, delete: if true;
     }
+
+    // Official Tuition Receipts
+    match /receipts/{receiptId} {
+      allow read: if true;
+      allow create, update, delete: if true;
+    }
   }
 }

@@ -53,6 +53,35 @@
         "submittedAt": { "type": "string", "maxLength": 64 }
       },
       "required": ["id", "fullName", "email"]
+    },
+    "Receipt": {
+      "title": "Receipt",
+      "description": "Official tuition payment receipt record",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "receiptNumber": { "type": "string", "maxLength": 64 },
+        "transactionReference": { "type": "string", "maxLength": 128 },
+        "studentId": { "type": "string", "maxLength": 128 },
+        "studentName": { "type": "string", "maxLength": 128 },
+        "amount": { "type": "number" },
+        "status": { "type": "string", "maxLength": 32 },
+        "issuedAt": { "type": "string", "maxLength": 64 }
+      },
+      "required": ["id", "receiptNumber", "studentId", "amount", "status"]
+    },
+    "AuditLog": {
+      "title": "AuditLog",
+      "description": "Administrative payment decision and audit record",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "adminName": { "type": "string", "maxLength": 128 },
+        "action": { "type": "string", "maxLength": 128 },
+        "details": { "type": "string", "maxLength": 512 },
+        "timestamp": { "type": "string", "maxLength": 64 }
+      },
+      "required": ["id", "adminName", "action", "timestamp"]
     }
   },
   "firestore": {
@@ -67,6 +96,14 @@
     "/applications/{applicationId}": {
       "schema": "Application",
       "description": "Collection of incoming admissions applications"
+    },
+    "/receipts/{receiptId}": {
+      "schema": "Receipt",
+      "description": "Collection of official tuition payment receipts"
+    },
+    "/audit_logs/{logId}": {
+      "schema": "AuditLog",
+      "description": "Collection of administrative audit trail logs"
     }
   }
 }

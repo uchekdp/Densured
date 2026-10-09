@@ -175,6 +175,9 @@ export interface TransactionRecord {
   validUntil?: string;
   approvedAt?: string;
   approvedBy?: string;
+  rejectionReason?: string;
+  rejectedAt?: string;
+  rejectedBy?: string;
   qrPayload?: string;
 }
 
@@ -196,6 +199,7 @@ export interface StudentProfile {
   paymentStatus?: 'NOT_PAID' | 'PENDING' | 'APPROVED' | 'EXPIRED' | 'REJECTED';
   paymentExpiryDate?: string;
   paymentMonth?: string;
+  rejectionReason?: string;
   subscriptionStatus: 'Active' | 'Pending Approval' | 'Expired' | 'Unpaid';
   subscriptionExpiryDate?: string;
   subscriptionMonth?: string;
@@ -255,15 +259,26 @@ export interface MonthlyPaymentSubmission {
   id: string;
   studentId: string;
   studentName: string;
+  studentEmail?: string;
+  studentPhone?: string;
+  program?: string;
   registrationNumber: string;
   monthPeriod: string;
   amount: number;
   paymentMethod: string;
   referenceOrProof: string;
+  bankTellerNumber?: string;
+  paymentDate?: string;
+  proofUrl?: string;
+  studentRemarks?: string;
   submittedAt: string;
   status: 'Pending' | 'Approved' | 'Rejected';
   adminRemarks?: string;
+  rejectionReason?: string;
   approvedAt?: string;
+  approvedBy?: string;
+  rejectedAt?: string;
+  rejectedBy?: string;
   transactionReference?: string;
   studentShift?: StudentShift;
   receiptNumber?: string;

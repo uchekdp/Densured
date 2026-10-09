@@ -63,6 +63,7 @@ export interface PaymentRecord {
   payment_date: string;
   reference: string;
   method: string;
+  bank_teller_number?: string;
   proof_url?: string;
   status: 'Pending' | 'Approved' | 'Rejected' | 'Expired';
   submitted_date?: string;
@@ -220,6 +221,15 @@ export interface VideoRecord {
   created_at: string;
 }
 
+export interface AuditLogRecord {
+  id: string;
+  admin_name: string;
+  action: string;
+  details: string;
+  timestamp: string;
+  ip_address?: string;
+}
+
 export interface SettingsRecord {
   academy_name: string;
   tagline: string;
@@ -244,6 +254,7 @@ export interface DatabaseSchema {
   academic_progress: AcademicProgressRecord[];
   gallery: GalleryRecord[];
   videos: VideoRecord[];
+  audit_logs: AuditLogRecord[];
   settings: SettingsRecord;
 }
 
@@ -982,6 +993,33 @@ function seedInitialDatabase(): DatabaseSchema {
     academic_progress: academicProgress,
     gallery,
     videos: [],
+    audit_logs: [
+      {
+        id: 'log-001',
+        admin_name: 'Mr Akinjo Rotimi (Directorate Admin)',
+        action: 'System Database Initialized',
+        details: 'Initial database seed created with default academic session and tuition parameters.',
+        timestamp: new Date().toISOString(),
+      },
+    ],
     settings,
   };
+}
+
+export function addAuditLog(
+  db: DatabaseSchema,
+  action: string,
+  details: string,
+  adminName: string = 'Mr Akinjo Rotimi (Directorate Admin)',
+  ipAddress?: string
+): void {
+  if (!db.audit_logs) db.audit_logs = [];
+  db.audit_logs.unshift({
+    id: `log-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+    admin_name: adminName,
+    action,
+    details,
+    timestamp: new Date().toISOString(),
+    ip_address: ipAddress,
+  });
 }

@@ -11,6 +11,7 @@ import {
   generateStudentId,
   generateReceiptNumber,
   checkPaymentExpirations,
+  addAuditLog,
   StudentRecord,
   UserRecord,
   PaymentRecord,
@@ -656,7 +657,7 @@ apiRouter.delete(['/admin/applications/:id', '/applications/:id'], requireAdmin,
 
 // Student Submit Payment
 apiRouter.post('/payments/submit', (req, res) => {
-  const { studentId, amount, paymentMonth, reference, method, proofUrl, notes } = req.body;
+  const { studentId, amount, paymentMonth, reference, method, bankTellerNumber, proofUrl, notes, paymentDate } = req.body;
 
   if (!studentId || !amount || !paymentMonth || !reference) {
     res.status(400).json({ error: 'Student ID, amount, payment month, and reference are required.' });
@@ -664,7 +665,7 @@ apiRouter.post('/payments/submit', (req, res) => {
   }
 
   const db = getDb();
-  const student = db.students.find((s) => s.student_id === studentId.trim());
+  const student = db.students.find((s) => s.student_id === studentId.trim() || s.id === studentId.trim());
   if (!student) {
     res.status(404).json({ error: 'Student ID does not match any registered student.' });
     return;
@@ -681,23 +682,35 @@ apiRouter.post('/payments/submit', (req, res) => {
     id: `pay-${Date.now()}`,
     student_id: student.student_id,
     student_name: student.full_name,
+    student_phone: student.phone,
+    student_email: student.email,
+    program: student.preferred_programme || student.intended_exam || 'UTME',
     amount: Number(amount),
     payment_month: paymentMonth,
-    payment_date: new Date().toISOString().split('T')[0],
+    payment_year: new Date().getFullYear(),
+    payment_date: paymentDate || new Date().toISOString().split('T')[0],
     reference: reference.trim(),
     method: method || 'Bank Transfer',
+    bank_teller_number: bankTellerNumber ? String(bankTellerNumber).trim() : undefined,
     status: 'Pending',
     proof_url: proofUrl || '',
     notes: notes || 'Monthly Tuition Payment Submitted',
+    submitted_date: new Date().toISOString(),
+    created_at: new Date().toISOString(),
   };
 
   db.payments.unshift(newPayment);
+  addAuditLog(
+    db,
+    'Payment Submitted',
+    `Tuition payment of ₦${Number(amount).toLocaleString()} submitted by ${student.full_name} (${student.student_id}). Ref: ${reference.trim()}. Status: Pending Approval.`
+  );
   saveDb(db);
 
   res.status(201).json({
     success: true,
     payment: newPayment,
-    message: 'Payment submitted successfully. Awaiting admin approval.',
+    message: 'Payment submitted successfully. Awaiting administrative approval.',
   });
 });
 
@@ -712,6 +725,12 @@ apiRouter.get('/admin/payments', requireAdmin, (req, res) => {
 apiRouter.get('/admin/receipts', requireAdmin, (req, res) => {
   const db = getDb();
   res.json({ receipts: db.receipts || [] });
+});
+
+// Admin Get Audit Logs
+apiRouter.get('/admin/audit-logs', requireAdmin, (req, res) => {
+  const db = getDb();
+  res.json({ audit_logs: db.audit_logs || [] });
 });
 
 // Admin Approve Payment & Auto-Generate Official Receipt
@@ -786,6 +805,12 @@ apiRouter.post('/admin/payments/:id/approve', requireAdmin, (req, res) => {
     if (user) user.status = 'active';
   }
 
+  addAuditLog(
+    db,
+    'Payment Approved',
+    `Approved tuition payment #${payment.reference} (₦${payment.amount.toLocaleString()}) for ${payment.student_name}. Receipt #${receipt.receipt_number} issued. Candidate access granted.`
+  );
+
   saveDb(db);
   res.json({
     success: true,
@@ -799,8 +824,13 @@ apiRouter.post('/admin/payments/:id/approve', requireAdmin, (req, res) => {
 // Admin Reject Payment
 apiRouter.post('/admin/payments/:id/reject', requireAdmin, (req, res) => {
   const { id } = req.params;
-  const { reason } = req.body;
+  const { reason } = req.body || {};
   const db = getDb();
+
+  if (!reason || !String(reason).trim()) {
+    res.status(400).json({ error: 'A specific rejection reason is required before confirming payment rejection.' });
+    return;
+  }
 
   const payment = db.payments.find((p) => p.id === id || p.reference === id);
   if (!payment) {
@@ -811,9 +841,16 @@ apiRouter.post('/admin/payments/:id/reject', requireAdmin, (req, res) => {
   payment.status = 'Rejected';
   payment.rejected_by = 'Mr Akinjo Rotimi (Directorate & Super Admin)';
   payment.rejected_date = new Date().toISOString().split('T')[0];
-  payment.rejection_reason = reason || 'Verification failed. Please resubmit valid payment evidence.';
-  payment.notes = reason ? `Rejected: ${reason}` : 'Payment rejected after verification failure.';
+  payment.rejection_reason = String(reason).trim();
+  payment.notes = `Rejected: ${String(reason).trim()}`;
   payment.updated_at = new Date().toISOString();
+
+  addAuditLog(
+    db,
+    'Payment Rejected',
+    `Payment #${payment.reference} for ${payment.student_name} was rejected. Reason: ${String(reason).trim()}`
+  );
+
   saveDb(db);
 
   res.json({ success: true, message: 'Payment rejected. Record preserved permanently in audit history.', payment });
