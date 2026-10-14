@@ -174,7 +174,12 @@ export const Footer: React.FC = () => {
 
         {/* Bottom Legal & Directorate Notice */}
         <div className="mt-10 pt-6 border-t border-slate-800 flex flex-col md:flex-row items-center justify-between gap-4 text-xs text-slate-400">
-          <p>© {new Date().getFullYear()} D Ensured Consult Academy. Directorate &amp; Super Admin: Mr Akinjo Rotimi.</p>
+          <div className="flex flex-col sm:flex-row items-center gap-2">
+            <p>© {new Date().getFullYear()} D Ensured Consult Academy. Directorate &amp; Super Admin: Mr Akinjo Rotimi.</p>
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-sky-950/80 border border-sky-800/60 text-[10px] font-mono text-sky-300 font-semibold" title="Active Live Build Version">
+              <span>Build v2026.10.14-v2.1</span>
+            </span>
+          </div>
           <div className="flex flex-wrap items-center gap-4">
             <span className="text-slate-400">
               Doyin Plaza, Okomaiko, Lagos State, Nigeria.

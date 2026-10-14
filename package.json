@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
-    "build": "vite build && node -e \"const fs=require('fs'); fs.mkdirSync('dist/admin', {recursive:true}); fs.copyFileSync('dist/index.html', 'dist/admin/index.html'); fs.copyFileSync('dist/index.html', 'dist/admin.html'); fs.copyFileSync('dist/index.html', 'dist/404.html');\"",
+    "build": "vite build && node -e \"const fs=require('fs'); fs.mkdirSync('dist/admin', {recursive:true}); fs.copyFileSync('dist/index.html', 'dist/admin/index.html'); fs.copyFileSync('dist/index.html', 'dist/admin.html'); fs.copyFileSync('dist/index.html', 'dist/404.html'); fs.copyFileSync('dist/index.html', 'dist/200.html'); if(fs.existsSync('public/_redirects')) fs.copyFileSync('public/_redirects', 'dist/_redirects'); if(fs.existsSync('vercel.json')) fs.copyFileSync('vercel.json', 'dist/vercel.json');\"",
     "start": "tsx server.ts",
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",

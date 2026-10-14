@@ -56,7 +56,6 @@ export const StudentPortal: React.FC = () => {
     currentStudent,
     studentsList,
     applications,
-    switchStudent,
     updateStudentPhoto,
     isStudentLoggedIn,
     loginStudent,

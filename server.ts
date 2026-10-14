@@ -118,9 +118,21 @@ async function startServer() {
     });
     app.use(vite.middlewares);
   } else {
-    // Serve production build
+    // Serve production build with no-cache for index.html
     const distDir = path.resolve(process.cwd(), 'dist');
-    app.use(express.static(distDir));
+    app.use(
+      express.static(distDir, {
+        setHeaders: (res, filePath) => {
+          if (filePath.endsWith('.html')) {
+            res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+            res.setHeader('Pragma', 'no-cache');
+            res.setHeader('Expires', '0');
+          } else if (filePath.includes('/assets/')) {
+            res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+          }
+        },
+      })
+    );
   }
 
   // Explicit route for /admin and /admin/* (Admin Dashboard direct link & refresh)

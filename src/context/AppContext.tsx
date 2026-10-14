@@ -961,13 +961,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
   }, []);
 
-  // Sync to localStorage
+  // Sync to localStorage with passwords stripped for frontend privacy
   useEffect(() => {
-    localStorage.setItem('dec_students', JSON.stringify(studentsList));
+    const sanitizedStudents = studentsList.map((s) => {
+      const copy = { ...s };
+      delete (copy as any).password;
+      return copy;
+    });
+    localStorage.setItem('dec_students', JSON.stringify(sanitizedStudents));
   }, [studentsList]);
 
   useEffect(() => {
-    localStorage.setItem('dec_applications', JSON.stringify(applications));
+    const sanitizedApps = applications.map((a) => {
+      const copy = { ...a };
+      delete (copy as any).password;
+      return copy;
+    });
+    localStorage.setItem('dec_applications', JSON.stringify(sanitizedApps));
   }, [applications]);
 
   useEffect(() => {
@@ -1631,21 +1641,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       };
     }
 
-    // Allow student123 or Student1234# as universal demo password or their registered password
-    if (
-      found.password &&
-      cleanPass !== found.password &&
-      cleanPass !== 'student123' &&
-      cleanPass !== 'Student1234#'
-    ) {
-      return {
-        success: false,
-        message: 'Incorrect portal password. Please re-enter your password.',
-      };
-    }
-
-    // Resolve student photo from profile, matching application, or localStorage
-    let resolvedStudent = found;
+    // Find matching application record
     const matchApp = applications.find(
       (a) =>
         (a.email && (a.email || '').toLowerCase() === (found.email || '').toLowerCase()) ||
@@ -1655,6 +1651,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         (a as any).student_id === found.id ||
         (a as any).student_id === found.registrationNumber
     );
+
+    // Validate student password
+    const registeredPassword = found.password || matchApp?.password;
+    if (registeredPassword && cleanPass !== registeredPassword) {
+      return {
+        success: false,
+        message: 'Incorrect portal password. Please re-enter your password.',
+      };
+    }
+
+    // Resolve student photo from profile, matching application, or localStorage
+    let resolvedStudent = found;
 
     const validPhoto = findValidPhoto(
       found.passportPhotoUrl,
@@ -1682,28 +1690,28 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setDoc(doc(db, 'students', found.id), resolvedStudent).catch(() => {});
     }
 
-    setCurrentStudent(resolvedStudent);
+    // Sanitize student object so passwords are not exposed in session
+    const sanitizedSessionStudent = { ...resolvedStudent };
+    delete (sanitizedSessionStudent as any).password;
+
+    setCurrentStudent(sanitizedSessionStudent);
     setIsStudentLoggedIn(true);
     localStorage.setItem('dec_student_logged_in', 'true');
+    localStorage.setItem('dec_student_user', JSON.stringify(sanitizedSessionStudent));
     setUserRole('student');
     showToast('success', 'Portal Access Granted', `Welcome to your individual e-portal, ${resolvedStudent.fullName}!`);
-    return { success: true, message: 'Welcome to your student portal.', student: resolvedStudent };
+    return { success: true, message: 'Welcome to your student portal.', student: sanitizedSessionStudent };
   };
 
   const logoutStudent = () => {
     setIsStudentLoggedIn(false);
     localStorage.removeItem('dec_student_logged_in');
+    localStorage.removeItem('dec_student_user');
     showToast('info', 'Signed Out', 'You have been signed out of your student portal.');
   };
 
-  const switchStudent = (studentId: string) => {
-    const found = studentsList.find((s) => s.id === studentId);
-    if (found) {
-      setCurrentStudent(found);
-      setIsStudentLoggedIn(true);
-      localStorage.setItem('dec_student_logged_in', 'true');
-      showToast('info', 'Active Student Switched', `Now viewing profile for ${found.fullName}`);
-    }
+  const switchStudent = (_studentId: string) => {
+    showToast('error', 'Authentication Required', 'To access another student portal, please sign out and sign in with that student\'s email and password.');
   };
 
   const updateStudentPhoto = (studentId: string, photoDataUrl: string) => {
