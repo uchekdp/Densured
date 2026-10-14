@@ -90,13 +90,18 @@ export type StudentPortalTab =
   | 'profile'
   | 'attendance'
   | 'cbt-mocks'
+  | 'cbt-practice'
   | 'results'
   | 'progress'
   | 'practice-sets'
   | 'timetables'
   | 'notes'
+  | 'study-materials'
   | 'announcements'
-  | 'finance';
+  | 'finance'
+  | 'monthly-payments'
+  | 'payment-history'
+  | 'receipts';
 
 export type AdminPortalTab =
   | 'dashboard'
@@ -195,8 +200,11 @@ interface AppContextType {
   submitMonthlyTuition: (studentId: string, shift: StudentShift, method?: TransactionRecord['paymentMethod']) => string;
   approveTuitionPayment: (transactionId: string) => OfficialReceipt | null;
   rejectTuitionPayment: (transactionId: string, reason?: string) => void;
+  approveAnyPayment: (idOrReference: string) => OfficialReceipt | null;
+  rejectAnyPayment: (idOrReference: string, reason?: string) => void;
   updateStudentShift: (studentId: string, shift: StudentShift) => void;
   isStudentSubscriptionActive: (student: StudentProfile) => boolean;
+  hasStudentApprovedFirstPayment: (student: StudentProfile) => boolean;
 
   // Official Receipt Modal & Management
   officialReceipts: OfficialReceipt[];
@@ -1124,18 +1132,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             } as AdmissionApplication;
           });
           if (remoteApps.length > 0) {
-            setApplications(remoteApps);
-            try {
-              localStorage.setItem('dec_applications', JSON.stringify(remoteApps));
-            } catch {}
-          } else if (snapshot.empty && !snapshot.metadata.hasPendingWrites) {
-            setApplications([]);
-            try {
-              localStorage.setItem('dec_applications', JSON.stringify([]));
-            } catch {}
+            setApplications((prev) => {
+              const map = new Map<string, AdmissionApplication>();
+              prev.forEach((a) => map.set(a.id, a));
+              remoteApps.forEach((a) => map.set(a.id, a));
+              const merged = Array.from(map.values());
+              try {
+                localStorage.setItem('dec_applications', JSON.stringify(merged));
+              } catch {}
+              return merged;
+            });
           }
         },
-        () => {}
+        (error) => {
+          console.warn('Live applications listener notice:', error.message);
+        }
       );
 
       const unsubStudents = onSnapshot(
@@ -1158,10 +1169,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             } as StudentProfile;
           });
           if (remoteStudents.length > 0) {
-            setStudentsList(remoteStudents);
-            try {
-              localStorage.setItem('dec_students', JSON.stringify(remoteStudents));
-            } catch {}
+            setStudentsList((prev) => {
+              const map = new Map<string, StudentProfile>();
+              // Retain all existing students
+              prev.forEach((s) => {
+                const key = s.registrationNumber || s.id;
+                map.set(key, s);
+              });
+              // Merge remote students safely
+              remoteStudents.forEach((s) => {
+                const key = s.registrationNumber || s.id;
+                const existing = map.get(key);
+                map.set(key, existing ? { ...existing, ...s } : s);
+              });
+              const merged = Array.from(map.values());
+              try {
+                localStorage.setItem('dec_students', JSON.stringify(merged));
+              } catch {}
+              return merged;
+            });
+
             setCurrentStudent((cur) => {
               if (!cur) return cur;
               const matched = remoteStudents.find((s) => s.id === cur.id || s.registrationNumber === cur.registrationNumber);
@@ -1170,14 +1197,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               }
               return cur;
             });
-          } else if (snapshot.empty && !snapshot.metadata.hasPendingWrites) {
-            setStudentsList([]);
-            try {
-              localStorage.setItem('dec_students', JSON.stringify([]));
-            } catch {}
           }
         },
-        () => {}
+        (error) => {
+          console.warn('Live students listener notice:', error.message);
+        }
       );
 
       const unsubPayments = onSnapshot(
@@ -1185,18 +1209,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         (snapshot) => {
           const remotePayments = snapshot.docs.map((d) => d.data() as TransactionRecord);
           if (remotePayments.length > 0) {
-            setTransactions(remotePayments);
-            try {
-              localStorage.setItem('dec_transactions_clean_v1', JSON.stringify(remotePayments));
-            } catch {}
-          } else if (snapshot.empty && !snapshot.metadata.hasPendingWrites) {
-            setTransactions([]);
-            try {
-              localStorage.setItem('dec_transactions_clean_v1', JSON.stringify([]));
-            } catch {}
+            setTransactions((prev) => {
+              const map = new Map<string, TransactionRecord>();
+              prev.forEach((t) => map.set(t.id || t.reference, t));
+              remotePayments.forEach((t) => map.set(t.id || t.reference, t));
+              const merged = Array.from(map.values());
+              try {
+                localStorage.setItem('dec_transactions_clean_v1', JSON.stringify(merged));
+              } catch {}
+              return merged;
+            });
           }
         },
-        () => {}
+        (error) => {
+          console.warn('Live payments listener notice:', error.message);
+        }
       );
 
       const unsubMaterials = onSnapshot(
@@ -1205,11 +1232,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           const remote = snapshot.docs.map((d) => d.data() as StudyMaterial);
           if (remote.length > 0) {
             setStudyMaterials(remote);
-          } else if (snapshot.empty && !snapshot.metadata.hasPendingWrites) {
-            setStudyMaterials([]);
           }
         },
-        () => {}
+        (error) => {
+          console.warn('Live materials listener notice:', error.message);
+        }
       );
 
       const unsubAnnouncements = onSnapshot(
@@ -1218,11 +1245,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           const remote = snapshot.docs.map((d) => d.data() as Announcement);
           if (remote.length > 0) {
             setAnnouncements(remote);
-          } else if (snapshot.empty && !snapshot.metadata.hasPendingWrites) {
-            setAnnouncements([]);
           }
         },
-        () => {}
+        (error) => {
+          console.warn('Live announcements listener notice:', error.message);
+        }
       );
 
       const unsubCbt = onSnapshot(
@@ -1231,11 +1258,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           const remote = snapshot.docs.map((d) => d.data() as CBTExam);
           if (remote.length > 0) {
             setCbtExams(remote);
-          } else if (snapshot.empty && !snapshot.metadata.hasPendingWrites) {
-            setCbtExams([]);
           }
         },
-        () => {}
+        (error) => {
+          console.warn('Live CBT listener notice:', error.message);
+        }
       );
 
       const unsubQuestions = onSnapshot(
@@ -1244,11 +1271,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           const remote = snapshot.docs.map((d) => d.data() as PracticeQuestion);
           if (remote.length > 0) {
             setPracticeQuestions(remote);
-          } else if (snapshot.empty && !snapshot.metadata.hasPendingWrites) {
-            setPracticeQuestions([]);
           }
         },
-        () => {}
+        (error) => {
+          console.warn('Live practice questions listener notice:', error.message);
+        }
       );
 
       const unsubAttendance = onSnapshot(
@@ -1257,11 +1284,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           const remote = snapshot.docs.map((d) => d.data() as DailyAttendanceSession);
           if (remote.length > 0) {
             setAttendanceSessions(remote);
-          } else if (snapshot.empty && !snapshot.metadata.hasPendingWrites) {
-            setAttendanceSessions([]);
           }
         },
-        () => {}
+        (error) => {
+          console.warn('Live attendance listener notice:', error.message);
+        }
       );
 
       const unsubGallery = onSnapshot(
@@ -1270,11 +1297,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           const remote = snapshot.docs.map((d) => d.data() as GalleryItem);
           if (remote.length > 0) {
             setGalleryItems(remote);
-          } else if (snapshot.empty && !snapshot.metadata.hasPendingWrites) {
-            setGalleryItems([]);
           }
         },
-        () => {}
+        (error) => {
+          console.warn('Live gallery listener notice:', error.message);
+        }
       );
 
       const unsubAdminUsers = onSnapshot(
@@ -1283,11 +1310,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           const remote = snapshot.docs.map((d) => d.data() as AdminUser);
           if (remote.length > 0) {
             setAdminUsers(remote);
-          } else if (snapshot.empty && !snapshot.metadata.hasPendingWrites) {
-            setAdminUsers([]);
           }
         },
-        () => {}
+        (error) => {
+          console.warn('Live admin users listener notice:', error.message);
+        }
       );
 
       const unsubSubmissions = onSnapshot(
@@ -1312,6 +1339,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         () => {}
       );
 
+      const unsubReceipts = onSnapshot(
+        collection(db, 'receipts'),
+        (snapshot) => {
+          const remote = snapshot.docs.map((d) => d.data() as OfficialReceipt);
+          if (remote.length > 0) {
+            setOfficialReceipts((prev) => {
+              const map = new Map<string, OfficialReceipt>();
+              prev.forEach((r) => map.set(r.receiptNumber || r.id, r));
+              remote.forEach((r) => map.set(r.receiptNumber || r.id, r));
+              const merged = Array.from(map.values());
+              try {
+                localStorage.setItem('dec_official_receipts', JSON.stringify(merged));
+              } catch {}
+              return merged;
+            });
+          }
+        },
+        () => {}
+      );
+
       return () => {
         unsubApps();
         unsubStudents();
@@ -1325,6 +1372,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         unsubAdminUsers();
         unsubSubmissions();
         unsubAuditLogs();
+        unsubReceipts();
       };
     } catch {
       // Graceful fallback
@@ -1760,7 +1808,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     }
 
-    // Permanently remove from Firebase Firestore
+    // Permanently remove student profile from Firebase Firestore
     deleteDoc(doc(db, 'students', studentId)).catch(() => {});
     if (studentToDelete) {
       if (studentToDelete.id && studentToDelete.id !== studentId) {
@@ -1769,27 +1817,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (studentToDelete.registrationNumber) {
         deleteDoc(doc(db, 'students', studentToDelete.registrationNumber)).catch(() => {});
       }
-      if (studentToDelete.email) {
-        applications
-          .filter((a) => (a.email || '').toLowerCase() === studentToDelete.email.toLowerCase())
-          .forEach((a) => {
-            deleteDoc(doc(db, 'applications', a.id)).catch(() => {});
-          });
-      }
-      transactions
-        .filter((t) => t.studentId === studentId || t.studentName === studentToDelete.fullName)
-        .forEach((t) => {
-          deleteDoc(doc(db, 'payments', t.id)).catch(() => {});
-        });
+      // CRITICAL DATA RETENTION: Historical tuition transactions, receipts, and payment submissions
+      // are STRICTLY PRESERVED for audit and ledger integrity. They are NEVER cascade-deleted.
     }
 
     // Permanently remove from backend API
     studentApi.deleteStudent(studentId).catch(() => {});
-
-    // Clean up local related collections
-    setTransactions((prev) => prev.filter((t) => t.studentId !== studentId && t.studentName !== studentToDelete?.fullName));
-    setApplications((prev) => prev.filter((a) => a.id !== studentId && (a.email || '').toLowerCase() !== (studentToDelete?.email || '').toLowerCase()));
-    setMonthlyPaymentSubmissions((prev) => prev.filter((m) => m.studentId !== studentId));
 
     if (studentToDelete) {
       addAuditLog(
@@ -2735,28 +2768,67 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Monthly Tuition Payment Submissions
   const submitMonthlyPayment = (submission: Omit<MonthlyPaymentSubmission, 'id' | 'submittedAt' | 'status'>) => {
+    const ref = submission.transactionReference || submission.referenceOrProof || `DEC-REF-${Date.now()}`;
     const newSubmission: MonthlyPaymentSubmission = {
       ...submission,
       id: `mps-${Date.now()}`,
+      transactionReference: ref,
+      referenceOrProof: ref,
       submittedAt: new Date().toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
       status: 'Pending',
     };
     setMonthlyPaymentSubmissions((prev) => [newSubmission, ...prev]);
     setDoc(doc(db, 'submissions', newSubmission.id), newSubmission).catch(() => {});
 
+    // Sync transaction record so financial ledgers immediately capture the submission
+    const pendingTx: TransactionRecord = {
+      id: `tx-${newSubmission.id}`,
+      studentId: submission.studentId,
+      studentName: submission.studentName,
+      amount: submission.amount,
+      currency: 'NGN',
+      description: `Monthly Tuition Payment - ${submission.monthPeriod}`,
+      type: 'Tuition',
+      paymentMethod: (submission.paymentMethod as any) || 'Bank Transfer',
+      reference: ref,
+      date: submission.paymentDate || new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
+      timestamp: new Date().toISOString(),
+      status: 'Pending',
+      monthPeriod: submission.monthPeriod,
+      program: submission.program || 'UTME',
+      studentShift: submission.studentShift || 'Morning',
+    };
+    setTransactions((prev) => [pendingTx, ...prev]);
+    setDoc(doc(db, 'payments', pendingTx.id), pendingTx).catch(() => {});
+
+    // Sync to backend persistent store
+    paymentApi
+      .submitPayment({
+        studentId: submission.studentId,
+        amount: submission.amount,
+        paymentMonth: submission.monthPeriod,
+        reference: ref,
+        method: submission.paymentMethod,
+        bankTellerNumber: submission.bankTellerNumber,
+        paymentDate: submission.paymentDate,
+        proofUrl: submission.proofUrl,
+        notes: submission.studentRemarks,
+      })
+      .catch((err) => console.warn('[Payment Sync] Backend submission note:', err));
+
     // Mark student's status as 'Pending Approval'
     setStudentsList((prev) =>
       prev.map((s) => {
-        if (s.id === submission.studentId) {
-          const updated = { ...s, subscriptionStatus: 'Pending Approval' as const };
+        if (s.id === submission.studentId || s.registrationNumber === submission.registrationNumber) {
+          const updated = { ...s, subscriptionStatus: 'Pending Approval' as const, paymentStatus: 'PENDING' as const };
           setDoc(doc(db, 'students', s.id), updated, { merge: true }).catch(() => {});
           return updated;
         }
         return s;
       })
     );
-    if (currentStudent && currentStudent.id === submission.studentId) {
-      setCurrentStudent((prev) => ({ ...prev, subscriptionStatus: 'Pending Approval' }));
+    if (currentStudent && (currentStudent.id === submission.studentId || currentStudent.registrationNumber === submission.registrationNumber)) {
+      setCurrentStudent((prev) => ({ ...prev, subscriptionStatus: 'Pending Approval', paymentStatus: 'PENDING' }));
     }
 
     addAuditLog('Monthly Payment Submitted', `Payment submitted by ${submission.studentName} for ${submission.monthPeriod} (₦${submission.amount.toLocaleString()}). Pending admin approval.`);
@@ -2764,7 +2836,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const approveMonthlyPaymentSubmission = (submissionId: string): OfficialReceipt | null => {
-    const submission = monthlyPaymentSubmissions.find((m) => m.id === submissionId);
+    const submission = monthlyPaymentSubmissions.find((m) => m.id === submissionId || m.transactionReference === submissionId);
     if (!submission) return null;
 
     // Check if receipt already exists to prevent duplicates (Requirement 20)
@@ -2776,14 +2848,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return existingReceipt;
     }
 
-    const student = studentsList.find((s) => s.id === submission.studentId) || currentStudent;
+    const student = studentsList.find((s) => s.id === submission.studentId || s.registrationNumber === submission.registrationNumber) || currentStudent;
     const now = new Date();
     const approvedAtFormatted = now.toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
     const receiptNum = `DEA-REC-${now.getFullYear()}-${String(officialReceipts.length + 1).padStart(5, '0')}`;
     const lastDayOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
     const validUntil = `${lastDayOfMonth.getDate()} ${now.toLocaleString('en-US', { month: 'short' })} ${now.getFullYear()}`;
 
-    const qrPayload = `https://densuredconsult.edu.ng/verify-receipt?receipt=${receiptNum}&ref=${ref}&student=${encodeURIComponent(submission.studentName)}&reg=${submission.registrationNumber}&shift=${submission.studentShift}&month=${encodeURIComponent(submission.monthPeriod)}&amount=${submission.amount}&status=APPROVED`;
+    const qrPayload = `https://densuredconsult.edu.ng/verify-receipt?receipt=${receiptNum}&ref=${ref}&student=${encodeURIComponent(submission.studentName)}&reg=${submission.registrationNumber}&shift=${submission.studentShift || 'Morning'}&month=${encodeURIComponent(submission.monthPeriod)}&amount=${submission.amount}&status=APPROVED`;
 
     const officialReceipt: OfficialReceipt = {
       id: `rec-${Date.now()}`,
@@ -2797,61 +2869,96 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       program: student.program,
       studentShift: submission.studentShift || student.studentShift || 'Morning',
       amount: submission.amount,
-      amountInWords: submission.amount === 20000 ? 'TWENTY THOUSAND NAIRA ONLY' : 'FIFTEEN THOUSAND NAIRA ONLY',
+      amountInWords: submission.amount === 20000 ? 'TWENTY THOUSAND NAIRA ONLY' : `${submission.amount.toLocaleString()} NAIRA ONLY`,
       currency: 'NGN',
       monthPeriod: submission.monthPeriod,
       validUntil,
       issueDate: submission.submittedAt,
-      approvedBy: 'Mr. Akinjo Rotimi (Founder & Directorate Admin)',
+      approvedBy: 'Mr Akinjo Rotimi (Directorate & Super Admin)',
       approvedAt: approvedAtFormatted,
       qrPayload,
       status: 'Approved',
       paymentMethod: submission.paymentMethod as any,
+      studentAvatar: student.passportPhotoUrl || student.photoUrl || student.avatar,
+      photoUrl: student.passportPhotoUrl || student.photoUrl || student.avatar,
     };
 
-    setOfficialReceipts((prev) => [officialReceipt, ...prev]);
+    setOfficialReceipts((prev) => {
+      const updated = [officialReceipt, ...prev];
+      try {
+        localStorage.setItem('dec_official_receipts', JSON.stringify(updated));
+      } catch {}
+      return updated;
+    });
+    setDoc(doc(db, 'receipts', officialReceipt.id), officialReceipt).catch(() => {});
 
     // Update submission in state and Firestore
-    const updatedSubmission: MonthlyPaymentSubmission = { ...submission, status: 'Approved', receiptNumber: receiptNum };
-    setMonthlyPaymentSubmissions((prev) =>
-      prev.map((m) => (m.id === submissionId ? updatedSubmission : m))
-    );
-    setDoc(doc(db, 'submissions', submissionId), updatedSubmission, { merge: true }).catch(() => {});
-
-    // Create corresponding Transaction Record for Financial Reports
-    const newTx: TransactionRecord = {
-      id: `tx-${Date.now()}`,
-      studentId: student.id,
-      studentName: student.fullName,
-      amount: submission.amount,
-      currency: 'NGN',
-      description: `Monthly Tuition Payment - ${submission.monthPeriod}`,
-      type: 'Tuition',
-      paymentMethod: (submission.paymentMethod as any) || 'Bank Transfer',
-      reference: submission.transactionReference || `DEC-TX-${Date.now()}`,
-      date: now.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
-      timestamp: now.toISOString(),
-      status: 'Successful',
-      monthPeriod: submission.monthPeriod,
-      validUntil,
+    const updatedSubmission: MonthlyPaymentSubmission = {
+      ...submission,
+      status: 'Approved',
       receiptNumber: receiptNum,
-      approvedBy: 'Mr. Akinjo Rotimi (Founder)',
       approvedAt: approvedAtFormatted,
-      program: student.program,
-      studentShift: submission.studentShift || student.studentShift || 'Morning',
-      qrPayload,
+      approvedBy: 'Mr Akinjo Rotimi (Directorate & Super Admin)',
     };
-    setTransactions((prev) => [newTx, ...prev]);
-    setDoc(doc(db, 'payments', newTx.id), newTx).catch(() => {});
+    setMonthlyPaymentSubmissions((prev) =>
+      prev.map((m) => (m.id === submission.id || m.transactionReference === ref ? updatedSubmission : m))
+    );
+    setDoc(doc(db, 'submissions', submission.id), updatedSubmission, { merge: true }).catch(() => {});
 
-    // Update student to Active in state and Firestore
+    // Create or update corresponding Transaction Record
+    setTransactions((prev) => {
+      const exists = prev.some((t) => t.reference === ref || t.id === `tx-${submission.id}`);
+      if (exists) {
+        return prev.map((t) =>
+          t.reference === ref || t.id === `tx-${submission.id}`
+            ? {
+                ...t,
+                status: 'Successful',
+                receiptNumber: receiptNum,
+                approvedAt: approvedAtFormatted,
+                approvedBy: 'Mr Akinjo Rotimi (Directorate & Super Admin)',
+                qrPayload,
+              }
+            : t
+        );
+      }
+      const newTx: TransactionRecord = {
+        id: `tx-${Date.now()}`,
+        studentId: student.id,
+        studentName: student.fullName,
+        amount: submission.amount,
+        currency: 'NGN',
+        description: `Monthly Tuition Payment - ${submission.monthPeriod}`,
+        type: 'Tuition',
+        paymentMethod: (submission.paymentMethod as any) || 'Bank Transfer',
+        reference: ref,
+        date: now.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
+        timestamp: now.toISOString(),
+        status: 'Successful',
+        monthPeriod: submission.monthPeriod,
+        validUntil,
+        receiptNumber: receiptNum,
+        approvedBy: 'Mr Akinjo Rotimi (Directorate & Super Admin)',
+        approvedAt: approvedAtFormatted,
+        program: student.program,
+        studentShift: submission.studentShift || student.studentShift || 'Morning',
+        qrPayload,
+      };
+      setDoc(doc(db, 'payments', newTx.id), newTx).catch(() => {});
+      return [newTx, ...prev];
+    });
+
+    // Update student to Active & enable ID card generation for life
     const expiryDateFormatted = `${lastDayOfMonth.getDate()} ${now.toLocaleString('en-US', { month: 'short' })} ${now.getFullYear()}, 11:59 PM`;
     setStudentsList((prev) =>
       prev.map((s) => {
-        if (s.id === submission.studentId) {
+        if (s.id === submission.studentId || s.registrationNumber === submission.registrationNumber) {
           const updated: StudentProfile = {
             ...s,
             subscriptionStatus: 'Active',
+            paymentStatus: 'APPROVED',
+            enrollmentStatus: 'APPROVED',
+            hasFirstPaymentApproved: true,
             subscriptionMonth: submission.monthPeriod,
             subscriptionExpiryDate: expiryDateFormatted,
             lastApprovedReceipt: officialReceipt,
@@ -2860,7 +2967,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             tuitionPaid: (s.tuitionPaid || 0) + submission.amount,
           };
           setDoc(doc(db, 'students', s.id), updated, { merge: true }).catch(() => {});
-          if (currentStudent && currentStudent.id === s.id) {
+          if (currentStudent && (currentStudent.id === s.id || currentStudent.registrationNumber === s.registrationNumber)) {
             setCurrentStudent(updated);
           }
           return updated;
@@ -2869,13 +2976,37 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       })
     );
 
-    addAuditLog('Monthly Payment Approved', `Approved payment of ₦${submission.amount.toLocaleString()} for ${submission.studentName}. Receipt #${receiptNum} issued.`);
-    showToast('success', 'Payment Approved', `${submission.studentName}'s portal features have been unlocked.`);
+    // Call backend API to approve payment record on server
+    paymentApi
+      .approvePayment(submission.id, {
+        studentId: student.id,
+        reference: ref,
+        amount: submission.amount,
+        paymentMonth: submission.monthPeriod,
+        studentName: student.fullName,
+        studentEmail: student.email,
+        studentPhone: student.phone,
+        program: student.program,
+      })
+      .catch(() => {
+        paymentApi
+          .approvePayment(ref, {
+            studentId: student.id,
+            reference: ref,
+            amount: submission.amount,
+            paymentMonth: submission.monthPeriod,
+            studentName: student.fullName,
+          })
+          .catch(() => {});
+      });
+
+    addAuditLog('Monthly Payment Approved', `Approved payment of ₦${submission.amount.toLocaleString()} for ${submission.studentName}. Receipt #${receiptNum} issued. Portal unlocked.`);
+    showToast('success', 'Payment Approved', `${submission.studentName}'s portal features have been unlocked and official receipt #${receiptNum} issued.`);
     return officialReceipt;
   };
 
   const rejectMonthlyPaymentSubmission = (submissionId: string, reason?: string) => {
-    const submission = monthlyPaymentSubmissions.find((m) => m.id === submissionId);
+    const submission = monthlyPaymentSubmissions.find((m) => m.id === submissionId || m.transactionReference === submissionId);
     if (!submission) return;
 
     const nowFormatted = new Date().toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
@@ -2886,16 +3017,31 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       status: 'Rejected',
       rejectionReason: finalReason,
       rejectedAt: nowFormatted,
-      rejectedBy: 'Mr. Akinjo Rotimi (Directorate Admin)',
+      rejectedBy: 'Mr Akinjo Rotimi (Directorate & Super Admin)',
     };
     setMonthlyPaymentSubmissions((prev) =>
-      prev.map((m) => (m.id === submissionId ? updatedSub : m))
+      prev.map((m) => (m.id === submission.id || m.transactionReference === submission.transactionReference ? updatedSub : m))
     );
-    setDoc(doc(db, 'submissions', submissionId), updatedSub, { merge: true }).catch(() => {});
+    setDoc(doc(db, 'submissions', submission.id), updatedSub, { merge: true }).catch(() => {});
+
+    // Update transactions
+    setTransactions((prev) =>
+      prev.map((t) =>
+        t.reference === submission.transactionReference || t.id === `tx-${submission.id}`
+          ? {
+              ...t,
+              status: 'Failed',
+              rejectionReason: finalReason,
+              rejectedAt: nowFormatted,
+              rejectedBy: 'Mr Akinjo Rotimi (Directorate & Super Admin)',
+            }
+          : t
+      )
+    );
 
     setStudentsList((prev) =>
       prev.map((s) => {
-        if (s.id === submission.studentId) {
+        if (s.id === submission.studentId || s.registrationNumber === submission.registrationNumber) {
           const updated: StudentProfile = {
             ...s,
             subscriptionStatus: 'Unpaid',
@@ -2903,7 +3049,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             rejectionReason: finalReason,
           };
           setDoc(doc(db, 'students', s.id), updated, { merge: true }).catch(() => {});
-          if (currentStudent && currentStudent.id === s.id) {
+          if (currentStudent && (currentStudent.id === s.id || currentStudent.registrationNumber === s.registrationNumber)) {
             setCurrentStudent(updated);
           }
           return updated;
@@ -2911,6 +3057,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return s;
       })
     );
+
+    // Call backend API
+    paymentApi
+      .rejectPayment(submission.id, finalReason, {
+        studentId: submission.studentId,
+        reference: submission.transactionReference,
+        studentName: submission.studentName,
+      })
+      .catch(() => {
+        if (submission.transactionReference) {
+          paymentApi
+            .rejectPayment(submission.transactionReference, finalReason, {
+              studentId: submission.studentId,
+              reference: submission.transactionReference,
+            })
+            .catch(() => {});
+        }
+      });
 
     addAuditLog('Monthly Payment Rejected', `Rejected payment for ${submission.studentName}. Reason: ${finalReason}`);
     showToast('warning', 'Payment Rejected', `Payment for ${submission.studentName} was rejected: ${finalReason}`);
@@ -3356,7 +3520,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
 
     enrolledStudent.lastApprovedReceipt = officialReceipt;
-    setOfficialReceipts((prev) => [officialReceipt, ...prev]);
+    enrolledStudent.hasFirstPaymentApproved = true;
+    setOfficialReceipts((prev) => {
+      const updated = [officialReceipt, ...prev.filter((r) => r.receiptNumber !== receiptNum && r.transactionReference !== tx.reference)];
+      try {
+        localStorage.setItem('dec_official_receipts', JSON.stringify(updated));
+      } catch {}
+      return updated;
+    });
+    setDoc(doc(db, 'receipts', officialReceipt.id), officialReceipt).catch(() => {});
 
     // Update Transaction
     setTransactions((prev) =>
@@ -3399,7 +3571,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         m.studentId === tx.studentId ||
         (student && m.studentId === student.id) ||
         (student && m.studentName && m.studentName.toLowerCase().trim() === student.fullName.toLowerCase().trim())
-          ? { ...m, status: 'Approved', registrationNumber: student!.registrationNumber }
+          ? { ...m, status: 'Approved', registrationNumber: student!.registrationNumber, receiptNumber: receiptNum }
           : m
       )
     );
@@ -3422,6 +3594,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               enrollmentStatus: 'APPROVED',
               paymentStatus: 'APPROVED',
               subscriptionStatus: 'Active',
+              hasFirstPaymentApproved: true,
               subscriptionExpiryDate: expiryDateFormatted,
               paymentExpiryDate: expiryDateFormatted,
               subscriptionMonth: monthPeriod,
@@ -3431,6 +3604,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               tuitionPaid: Math.max((s.tuitionPaid || 0) + amount, amount),
               tuitionBalance: 0,
             };
+            setDoc(doc(db, 'students', s.id), updated, { merge: true }).catch(() => {});
             if (
               currentStudent.id === s.id ||
               (currentStudent.email && s.email && currentStudent.email.toLowerCase().trim() === s.email.toLowerCase().trim()) ||
@@ -3443,12 +3617,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           return s;
         });
       } else {
+        enrolledStudent.hasFirstPaymentApproved = true;
         if (
           currentStudent.id === enrolledStudent.id ||
           (currentStudent.email && enrolledStudent.email && currentStudent.email.toLowerCase().trim() === enrolledStudent.email.toLowerCase().trim())
         ) {
           setCurrentStudent(enrolledStudent);
         }
+        setDoc(doc(db, 'students', enrolledStudent.id), enrolledStudent).catch(() => {});
         // PREPEND newly enrolled student so their name appears immediately at the top of the Student Directory!
         return [enrolledStudent, ...prev];
       }
@@ -3456,6 +3632,30 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     setDoc(doc(db, 'students', (enrolledStudent || student)!.id), enrolledStudent || student).catch(() => {});
     setDoc(doc(db, 'payments', tx.id), { ...tx, status: 'Successful', receiptNumber: receiptNum }).catch(() => {});
+
+    // Call backend API to approve payment record on server
+    paymentApi
+      .approvePayment(tx.id, {
+        studentId: student.id,
+        reference: tx.reference,
+        amount,
+        paymentMonth: monthPeriod,
+        studentName: student.fullName,
+        studentEmail: student.email,
+        studentPhone: student.phone,
+        program: student.program,
+      })
+      .catch(() => {
+        paymentApi
+          .approvePayment(tx.reference, {
+            studentId: student.id,
+            reference: tx.reference,
+            amount,
+            paymentMonth: monthPeriod,
+            studentName: student.fullName,
+          })
+          .catch(() => {});
+      });
 
     addAuditLog(
       'Monthly Tuition Approved & Cleared',
@@ -3526,6 +3726,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             subscriptionStatus: 'Unpaid',
             rejectionReason: finalReason,
           };
+          setDoc(doc(db, 'students', s.id), updated, { merge: true }).catch(() => {});
           if (currentStudent.id === s.id) {
             setCurrentStudent(updated);
           }
@@ -3542,6 +3743,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       rejectedAt: nowFormatted,
       rejectedBy: 'Mr. Akinjo Rotimi (Directorate Admin)',
     }).catch(() => {});
+
+    // Call backend API
+    paymentApi
+      .rejectPayment(tx.id, finalReason, {
+        studentId: tx.studentId,
+        reference: tx.reference,
+        studentName: tx.studentName,
+      })
+      .catch(() => {
+        if (tx.reference) {
+          paymentApi
+            .rejectPayment(tx.reference, finalReason, {
+              studentId: tx.studentId,
+              reference: tx.reference,
+            })
+            .catch(() => {});
+        }
+      });
 
     addAuditLog('Payment Rejected', `Payment #${tx.reference} for student ID ${tx.studentId} was rejected. Reason: ${finalReason}`);
     showToast('error', 'Payment Rejected', `Payment #${tx.reference} was rejected: ${finalReason}`);
@@ -3647,11 +3866,123 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         (studentSubscriptionMonth.includes(currentMonthName.toLowerCase()) &&
           studentSubscriptionMonth.includes(String(currentYear))));
 
+    // Also check official receipts for current month
+    const hasApprovedCurrentMonthReceipt = (officialReceipts || []).some((r) => {
+      const isStudentMatch =
+        r.studentId === student.id ||
+        r.registrationNumber === student.registrationNumber ||
+        (r.studentName && r.studentName.toLowerCase().trim() === student.fullName?.toLowerCase().trim()) ||
+        (r.studentEmail && r.studentEmail.toLowerCase().trim() === student.email?.toLowerCase().trim());
+      if (!isStudentMatch || r.status !== 'Approved') return false;
+
+      const rMonth = (r.monthPeriod || '').toLowerCase().trim();
+      return (
+        rMonth.includes(currentMonthPeriod) ||
+        (rMonth.includes(currentMonthName.toLowerCase()) && rMonth.includes(String(currentYear)))
+      );
+    });
+
     return Boolean(
       hasApprovedCurrentMonthSubmission ||
       hasApprovedCurrentMonthTx ||
+      hasApprovedCurrentMonthReceipt ||
       isStudentMarkedActiveForCurrentMonth
     );
+  };
+
+  const hasStudentApprovedFirstPayment = (student: StudentProfile): boolean => {
+    if (!student) return false;
+    if (student.hasFirstPaymentApproved || (student as any).has_first_payment_approved) {
+      return true;
+    }
+    const cleanId = (student.id || '').toLowerCase().trim();
+    const cleanReg = (student.registrationNumber || '').toLowerCase().trim();
+    const cleanEmail = (student.email || '').toLowerCase().trim();
+    const cleanName = (student.fullName || '').toLowerCase().trim();
+
+    // Check official receipts
+    const hasReceipt = (officialReceipts || []).some((r) => {
+      const rSid = (r.studentId || '').toLowerCase().trim();
+      const rReg = (r.registrationNumber || '').toLowerCase().trim();
+      const rEmail = (r.studentEmail || '').toLowerCase().trim();
+      const rName = (r.studentName || '').toLowerCase().trim();
+      return (
+        (cleanId && rSid === cleanId) ||
+        (cleanReg && rReg === cleanReg) ||
+        (cleanEmail && rEmail === cleanEmail) ||
+        (cleanName && rName === cleanName)
+      );
+    });
+    if (hasReceipt) return true;
+
+    // Check monthly payment submissions that are approved
+    const hasApprovedSub = (monthlyPaymentSubmissions || []).some((m) => {
+      const mSid = (m.studentId || '').toLowerCase().trim();
+      const mReg = (m.registrationNumber || '').toLowerCase().trim();
+      const mName = (m.studentName || '').toLowerCase().trim();
+      return (
+        m.status === 'Approved' &&
+        ((cleanId && mSid === cleanId) ||
+          (cleanReg && mReg === cleanReg) ||
+          (cleanName && mName === cleanName))
+      );
+    });
+    if (hasApprovedSub) return true;
+
+    // Check transactions
+    const hasApprovedTx = (transactions || []).some((t) => {
+      const tSid = (t.studentId || '').toLowerCase().trim();
+      const tName = (t.studentName || '').toLowerCase().trim();
+      const isApproved = t.status === 'Successful' || (t.status as string) === 'Approved';
+      return (
+        isApproved &&
+        ((cleanId && tSid === cleanId) ||
+          (cleanReg && tSid === cleanReg) ||
+          (cleanName && tName === cleanName))
+      );
+    });
+    if (hasApprovedTx) return true;
+
+    // Check student subscription/payment status
+    if (student.subscriptionStatus === 'Active' || student.paymentStatus === 'APPROVED') {
+      return true;
+    }
+
+    return false;
+  };
+
+  const approveAnyPayment = (idOrReference: string): OfficialReceipt | null => {
+    // 1. Try monthly payment submissions
+    const sub = monthlyPaymentSubmissions.find(
+      (m) => m.id === idOrReference || m.transactionReference === idOrReference || m.referenceOrProof === idOrReference
+    );
+    if (sub) {
+      return approveMonthlyPaymentSubmission(sub.id);
+    }
+    // 2. Try transactions
+    const tx = transactions.find(
+      (t) => t.id === idOrReference || t.reference === idOrReference
+    );
+    if (tx) {
+      return approveTuitionPayment(tx.id);
+    }
+    // 3. Fallback: call approveMonthlyPaymentSubmission
+    return approveMonthlyPaymentSubmission(idOrReference);
+  };
+
+  const rejectAnyPayment = (idOrReference: string, reason?: string) => {
+    const sub = monthlyPaymentSubmissions.find(
+      (m) => m.id === idOrReference || m.transactionReference === idOrReference || m.referenceOrProof === idOrReference
+    );
+    if (sub) {
+      rejectMonthlyPaymentSubmission(sub.id, reason);
+    }
+    const tx = transactions.find(
+      (t) => t.id === idOrReference || t.reference === idOrReference
+    );
+    if (tx) {
+      rejectTuitionPayment(tx.id, reason);
+    }
   };
 
   // Official Receipt Modal State
@@ -3731,8 +4062,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         submitMonthlyTuition,
         approveTuitionPayment,
         rejectTuitionPayment,
+        approveAnyPayment,
+        rejectAnyPayment,
         updateStudentShift,
         isStudentSubscriptionActive,
+        hasStudentApprovedFirstPayment,
         officialReceipts,
         selectedReceipt,
         isReceiptModalOpen,

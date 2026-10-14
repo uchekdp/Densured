@@ -16,6 +16,16 @@ function getAuthHeader(): Record<string, string> {
     headers['x-admin-access'] = 'directorate';
     headers['x-user-role'] = 'admin';
   }
+  const studentUserStr = localStorage.getItem('dec_student_user');
+  if (studentUserStr) {
+    try {
+      const studentUser = JSON.parse(studentUserStr);
+      const sid = studentUser.student_id || studentUser.registrationNumber || studentUser.id;
+      if (sid) {
+        headers['x-student-id'] = sid;
+      }
+    } catch {}
+  }
   return headers;
 }
 
@@ -141,14 +151,15 @@ export const paymentApi = {
   getAllPayments: () => apiRequest('/admin/payments'),
   getAllReceipts: () => apiRequest('/admin/receipts'),
   getAuditLogs: () => apiRequest('/admin/audit-logs'),
-  approvePayment: (id: string) =>
+  approvePayment: (id: string, payload?: any) =>
     apiRequest(`/admin/payments/${id}/approve`, {
       method: 'POST',
+      body: payload ? JSON.stringify(payload) : undefined,
     }),
-  rejectPayment: (id: string, reason?: string) =>
+  rejectPayment: (id: string, reason?: string, payload?: any) =>
     apiRequest(`/admin/payments/${id}/reject`, {
       method: 'POST',
-      body: JSON.stringify({ reason }),
+      body: JSON.stringify({ reason, ...(payload || {}) }),
     }),
   deletePayment: (id: string) =>
     apiRequest(`/admin/payments/${id}`, {
@@ -386,4 +397,29 @@ export const questionApi = {
       method: 'DELETE',
     }),
 };
+
+// Database Backup & Recovery API
+export const backupApi = {
+  getBackups: () => apiRequest('/admin/database/backups'),
+  createBackup: (reason?: string) =>
+    apiRequest('/admin/database/backup', {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    }),
+  restoreBackup: (filename: string) =>
+    apiRequest('/admin/database/restore', {
+      method: 'POST',
+      body: JSON.stringify({ filename }),
+    }),
+};
+
+// Database Migrations API
+export const migrationApi = {
+  getMigrations: () => apiRequest('/admin/database/migrations'),
+  runMigrations: () =>
+    apiRequest('/admin/database/migrate', {
+      method: 'POST',
+    }),
+};
+
 

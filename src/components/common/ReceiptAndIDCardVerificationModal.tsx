@@ -72,8 +72,6 @@ export const ReceiptAndIDCardVerificationModal: React.FC<ReceiptAndIDCardModalPr
     }
   }, [isOpen, initialTab, receipt]);
 
-  if (!isOpen) return null;
-
   // Generate cryptographic signature packet
   const cryptoPayload: CryptographicPayload = receipt
     ? generateCryptographicReceipt({
@@ -287,6 +285,8 @@ export const ReceiptAndIDCardVerificationModal: React.FC<ReceiptAndIDCardModalPr
     );
   }, [studentAvatar, receipt, studentsList, applications, currentStudent]);
 
+  if (!isOpen) return null;
+
   return (
     <div className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-6 bg-black/70 backdrop-blur-xs overflow-y-auto print:p-0 print:bg-white animate-in fade-in duration-200 font-['Poppins',sans-serif]">
       <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 max-w-2xl w-full overflow-hidden my-auto print:shadow-none print:border-none print:max-w-none">
@@ -450,10 +450,16 @@ export const ReceiptAndIDCardVerificationModal: React.FC<ReceiptAndIDCardModalPr
                       </strong>
                     </div>
                     <div>
-                      <span className="text-slate-400 block text-[10px]">Registration Number</span>
+                      <span className="text-slate-400 block text-[10px]">Registration Number / Student ID</span>
                       <strong className="text-[#0284c7] font-mono font-bold block text-xs">
-                        {receipt?.registrationNumber || cryptoPayload.registrationNumber}
+                        {receipt?.registrationNumber || receipt?.studentId || cryptoPayload.registrationNumber}
                       </strong>
+                    </div>
+                    <div>
+                      <span className="text-slate-400 block text-[10px]">Registered Email</span>
+                      <span className="font-mono text-slate-800 text-[11px] truncate block" title={receipt?.studentEmail || ''}>
+                        {receipt?.studentEmail || `${((receipt?.registrationNumber || receipt?.studentId || 'student').toLowerCase())}@student.dec.ng`}
+                      </span>
                     </div>
                     <div>
                       <span className="text-slate-400 block text-[10px]">Academic Programme</span>
@@ -464,6 +470,10 @@ export const ReceiptAndIDCardVerificationModal: React.FC<ReceiptAndIDCardModalPr
                       <span className="font-semibold text-slate-800">
                         {cryptoPayload.studentShift} ({cryptoPayload.studentShift === 'Morning' ? '9am-1:30pm' : '2pm-6:30pm'})
                       </span>
+                    </div>
+                    <div>
+                      <span className="text-slate-400 block text-[10px]">Payment Purpose</span>
+                      <span className="font-semibold text-emerald-800">Monthly Tuition Fee</span>
                     </div>
                   </div>
                 </div>

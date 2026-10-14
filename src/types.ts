@@ -203,6 +203,7 @@ export interface StudentProfile {
   subscriptionStatus: 'Active' | 'Pending Approval' | 'Expired' | 'Unpaid';
   subscriptionExpiryDate?: string;
   subscriptionMonth?: string;
+  hasFirstPaymentApproved?: boolean;
   lastApprovedReceipt?: OfficialReceipt;
   targetExamDate: string;
   daysRemaining: number;

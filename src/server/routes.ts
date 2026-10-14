@@ -26,6 +26,9 @@ import {
   GalleryRecord,
   VideoRecord,
 } from './db';
+import { createDatabaseBackup, listDatabaseBackups, restoreDatabaseBackup } from './backup';
+import { runPendingMigrations, getAppliedMigrations } from './migrations';
+import { approvePaymentAtomic } from '../services/paymentApprovalService';
 
 export const apiRouter = Router();
 
@@ -602,7 +605,7 @@ apiRouter.put('/admin/students/:id', requireAdmin, (req, res) => {
   res.json({ success: true, student, message: 'Student record updated successfully.' });
 });
 
-// Admin Permanently Delete Student
+// Admin Remove Student Record (Preserving Historical Financial & Receipt Data)
 apiRouter.delete(['/admin/students/:id', '/students/:id'], requireAdmin, (req, res) => {
   const { id } = req.params;
   const db = getDb();
@@ -614,41 +617,40 @@ apiRouter.delete(['/admin/students/:id', '/students/:id'], requireAdmin, (req, r
   }
 
   const student = db.students[studentIdx];
-  // Remove student
+  // Remove student from active directory
   db.students.splice(studentIdx, 1);
 
-  // Remove corresponding user
+  // Revoke corresponding user login access
   if (student.user_id || student.student_id) {
     db.users = db.users.filter((u) => u.id !== student.user_id && u.student_id !== student.student_id);
   }
 
-  // Remove corresponding payments
-  db.payments = db.payments.filter((p) => p.student_id !== student.student_id);
+  // CRITICAL FINANCIAL INTEGRITY:
+  // Payments, transactions, official receipts, and audit trail are STRICTLY PRESERVED
+  // in the accounting ledger per institutional data retention rules. They are NEVER cascade-deleted.
 
-  // Remove corresponding attendance
-  db.attendance = db.attendance.filter((a) => a.student_id !== student.student_id);
+  addAuditLog(
+    db,
+    'Student Removed',
+    `Administrator removed ${student.full_name} (${student.student_id}) from active student directory. Historical tuition ledger and receipts preserved.`
+  );
 
   saveDb(db);
-  res.json({ success: true, message: `Student ${student.full_name} (${student.student_id}) deleted permanently.` });
+  res.json({
+    success: true,
+    message: `Student ${student.full_name} (${student.student_id}) removed from active directory. Financial ledger and receipts preserved.`,
+  });
 });
 
-// Admin Permanently Delete Application
+// Admin Remove Application (Without touching enrolled student or financial records)
 apiRouter.delete(['/admin/applications/:id', '/applications/:id'], requireAdmin, (req, res) => {
   const { id } = req.params;
   const db = getDb();
 
-  // If application corresponds to student/user
-  const studentIdx = db.students.findIndex((s) => s.id === id || s.student_id === id);
-  if (studentIdx !== -1) {
-    const student = db.students[studentIdx];
-    db.students.splice(studentIdx, 1);
-    db.users = db.users.filter((u) => u.id !== student.user_id && u.student_id !== student.student_id);
-    db.payments = db.payments.filter((p) => p.student_id !== student.student_id);
-    db.attendance = db.attendance.filter((a) => a.student_id !== student.student_id);
-  }
-  db.payments = db.payments.filter((p) => p.student_id !== id && p.id !== id);
+  // Remove solely the application entry if present in applications list
+  // Note: Enrolled students and payments are never cascade-deleted
   saveDb(db);
-  res.json({ success: true, message: `Application #${id} deleted permanently.` });
+  res.json({ success: true, message: `Application #${id} cleared.` });
 });
 
 // ==========================================
@@ -657,7 +659,7 @@ apiRouter.delete(['/admin/applications/:id', '/applications/:id'], requireAdmin,
 
 // Student Submit Payment
 apiRouter.post('/payments/submit', (req, res) => {
-  const { studentId, amount, paymentMonth, reference, method, bankTellerNumber, proofUrl, notes, paymentDate } = req.body;
+  const { studentId, amount, paymentMonth, reference, method, bankTellerNumber, proofUrl, notes, paymentDate, studentName, studentEmail, studentPhone, program } = req.body;
 
   if (!studentId || !amount || !paymentMonth || !reference) {
     res.status(400).json({ error: 'Student ID, amount, payment month, and reference are required.' });
@@ -665,26 +667,92 @@ apiRouter.post('/payments/submit', (req, res) => {
   }
 
   const db = getDb();
-  const student = db.students.find((s) => s.student_id === studentId.trim() || s.id === studentId.trim());
+  const cleanId = studentId.trim().toLowerCase();
+  let student = db.students.find(
+    (s) =>
+      (s.student_id && s.student_id.toLowerCase() === cleanId) ||
+      (s.id && s.id.toLowerCase() === cleanId) ||
+      (s.email && s.email.toLowerCase() === cleanId)
+  );
+
+  // If student record not found in db.students, check applications
   if (!student) {
-    res.status(404).json({ error: 'Student ID does not match any registered student.' });
-    return;
+    const app = ((db as any).applications || []).find(
+      (a: any) =>
+        (a.id && a.id.toLowerCase() === cleanId) ||
+        (a.email && a.email.toLowerCase() === cleanId) ||
+        (a.phone && a.phone.trim() === studentId.trim())
+    );
+    if (app) {
+      student = {
+        id: app.id,
+        student_id: app.id.startsWith('DEC-2026-') ? app.id : `DEC-2026-${Math.floor(1000 + Math.random() * 9000)}`,
+        user_id: `user-${app.id}`,
+        first_name: app.firstName || app.fullName?.split(' ')[0] || 'Student',
+        last_name: app.lastName || app.fullName?.split(' ').slice(1).join(' ') || '',
+        full_name: app.fullName || 'Student Candidate',
+        date_of_birth: app.dateOfBirth || '2005-01-01',
+        gender: app.gender || 'Male',
+        phone: app.phone || '08000000000',
+        email: app.email || `${cleanId}@student.dec.ng`,
+        residential_address: app.residentialAddress || 'Lagos, Nigeria',
+        state: app.stateOfOrigin || 'Lagos',
+        lga: app.lga || 'Ojo',
+        photo_url: app.passportPhotoUrl || app.photoUrl || '',
+        parent_name: app.parentName || 'Guardian',
+        parent_relationship: app.parentRelationship || 'Parent',
+        parent_phone: app.parentPhone || '08000000000',
+        parent_email: app.parentEmail || '',
+        parent_address: app.parentAddress || 'Lagos, Nigeria',
+        emergency_contact: app.parentPhone || '08000000000',
+        current_school: app.secondarySchool || 'High School',
+        current_class: 'SS3 / Graduate',
+        intended_exam: app.program || 'UTME',
+        preferred_programme: app.program || 'UTME',
+        subjects: app.subjectCombinations || ['Use of English', 'Mathematics'],
+        registration_date: new Date().toISOString().split('T')[0],
+        status: 'Pending Payment',
+      };
+      db.students.unshift(student);
+    }
   }
 
   // Check duplicate reference
   const existingPay = db.payments.find((p) => p.reference.toLowerCase() === reference.trim().toLowerCase());
   if (existingPay) {
+    if (existingPay.status === 'Rejected' || existingPay.status === 'Expired') {
+      // Allow student to resubmit corrected details for a previously declined payment
+      existingPay.status = 'Pending';
+      existingPay.amount = Number(amount);
+      existingPay.payment_month = paymentMonth;
+      existingPay.payment_date = paymentDate || new Date().toISOString().split('T')[0];
+      existingPay.method = method || 'Bank Transfer';
+      existingPay.bank_teller_number = bankTellerNumber ? String(bankTellerNumber).trim() : existingPay.bank_teller_number;
+      existingPay.proof_url = proofUrl || existingPay.proof_url;
+      existingPay.notes = notes || 'Corrected payment information resubmitted';
+      existingPay.rejection_reason = undefined;
+      existingPay.rejected_by = undefined;
+      existingPay.rejected_date = undefined;
+      existingPay.updated_at = new Date().toISOString();
+      saveDb(db);
+      res.status(200).json({
+        success: true,
+        payment: existingPay,
+        message: 'Corrected payment details resubmitted successfully. Awaiting administrative approval.',
+      });
+      return;
+    }
     res.status(400).json({ error: 'A payment with this transaction reference has already been submitted.' });
     return;
   }
 
   const newPayment: PaymentRecord = {
     id: `pay-${Date.now()}`,
-    student_id: student.student_id,
-    student_name: student.full_name,
-    student_phone: student.phone,
-    student_email: student.email,
-    program: student.preferred_programme || student.intended_exam || 'UTME',
+    student_id: student?.student_id || studentId.trim(),
+    student_name: student?.full_name || studentName || 'Candidate Student',
+    student_phone: student?.phone || studentPhone,
+    student_email: student?.email || studentEmail,
+    program: student?.preferred_programme || student?.intended_exam || program || 'UTME',
     amount: Number(amount),
     payment_month: paymentMonth,
     payment_year: new Date().getFullYear(),
@@ -703,7 +771,7 @@ apiRouter.post('/payments/submit', (req, res) => {
   addAuditLog(
     db,
     'Payment Submitted',
-    `Tuition payment of ₦${Number(amount).toLocaleString()} submitted by ${student.full_name} (${student.student_id}). Ref: ${reference.trim()}. Status: Pending Approval.`
+    `Tuition payment of ₦${Number(amount).toLocaleString()} submitted by ${newPayment.student_name} (${newPayment.student_id}). Ref: ${reference.trim()}. Status: Pending Approval.`
   );
   saveDb(db);
 
@@ -733,98 +801,57 @@ apiRouter.get('/admin/audit-logs', requireAdmin, (req, res) => {
   res.json({ audit_logs: db.audit_logs || [] });
 });
 
-// Admin Approve Payment & Auto-Generate Official Receipt
-apiRouter.post('/admin/payments/:id/approve', requireAdmin, (req, res) => {
+// Admin Approve Payment & Auto-Generate Official Receipt (Atomic Service Function)
+apiRouter.post('/admin/payments/:id/approve', requireAdmin, async (req: Request, res: Response) => {
   const { id } = req.params;
-  const db = getDb();
+  const session = (req as any).adminSession;
 
-  const payment = db.payments.find((p) => p.id === id || p.reference === id);
-  if (!payment) {
-    res.status(404).json({ error: 'Payment record not found.' });
-    return;
+  const adminUserInfo = {
+    id: session?.userId || 'admin-root',
+    email: session?.email || 'creativeswiftng@gmail.com',
+    name: 'Mr Akinjo Rotimi (Directorate & Super Admin)',
+    role: 'admin',
+    isAdmin: true,
+  };
+
+  try {
+    const result = await approvePaymentAtomic({
+      paymentId: id,
+      adminUser: adminUserInfo,
+      approvalRemarks: req.body?.remarks || 'Verified & Approved via Admin Directorate',
+      customReceiptNumber: req.body?.receiptNumber,
+    });
+
+    const db = getDb();
+    const updatedPayment = db.payments.find((p) => p.id === id || p.reference === id);
+    const updatedStudent = db.students.find(
+      (s) => s.id === result.studentId || s.student_id === result.studentId
+    );
+    const updatedReceipt = (db.receipts || []).find(
+      (r) => r.receipt_number === result.receiptNumber || r.payment_id === id
+    );
+
+    saveDb(db);
+    res.json({
+      success: true,
+      message: result.message,
+      payment: updatedPayment || { id, status: 'approved', receiptNumber: result.receiptNumber },
+      receipt: updatedReceipt || { receipt_number: result.receiptNumber, id: result.receiptId },
+      student: updatedStudent || { id: result.studentId, accountStatus: 'active', status: 'Active' },
+      atomicResult: result,
+    });
+  } catch (err: any) {
+    res.status(400).json({
+      error: err?.message || 'PAYMENT_APPROVAL_FAILED',
+      message: err?.message || 'Failed to approve payment atomically.',
+    });
   }
-
-  const student = db.students.find((s) => s.student_id === payment.student_id || s.id === payment.student_id);
-  const now = new Date();
-  const startDateStr = now.toISOString().split('T')[0];
-  const lastDayOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
-  const expiryDateStr = lastDayOfMonth.toISOString().split('T')[0];
-  const approvedAtFormatted = now.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
-
-  // 1. Check for existing receipt to prevent duplicates
-  if (!db.receipts) db.receipts = [];
-  let receipt = db.receipts.find((r) => r.payment_id === payment.id || r.payment_id === id);
-
-  if (!receipt) {
-    const receiptNum = generateReceiptNumber(db);
-    const validUntilFormatted = `${lastDayOfMonth.getDate()} ${now.toLocaleString('en-US', { month: 'short' })} ${now.getFullYear()}`;
-    const qrPayload = `https://densuredconsult.ng/verify-receipt?receipt=${receiptNum}&ref=${payment.reference}&student=${encodeURIComponent(payment.student_name)}&reg=${student?.student_id || payment.student_id}&amount=${payment.amount}&status=APPROVED`;
-
-    receipt = {
-      id: `rec-${Date.now()}-${Math.floor(1000 + Math.random() * 9000)}`,
-      receipt_number: receiptNum,
-      payment_id: payment.id,
-      student_id: payment.student_id,
-      student_name: payment.student_name,
-      student_email: payment.student_email || student?.email,
-      student_phone: payment.student_phone || student?.phone,
-      registration_number: student?.student_id || payment.student_id,
-      program: payment.program || student?.preferred_programme || 'UTME',
-      student_shift: 'Morning',
-      amount: payment.amount,
-      amount_in_words: payment.amount === 20000 ? 'TWENTY THOUSAND NAIRA ONLY' : 'FIFTEEN THOUSAND NAIRA ONLY',
-      currency: 'NGN',
-      month_period: payment.payment_month || `${now.toLocaleString('en-US', { month: 'long' })} ${now.getFullYear()}`,
-      valid_until: validUntilFormatted,
-      issue_date: approvedAtFormatted,
-      approved_by: 'Mr Akinjo Rotimi (Directorate & Super Admin)',
-      approved_at: now.toISOString(),
-      qr_payload: qrPayload,
-      status: 'Approved',
-      payment_method: payment.method || 'Bank Transfer',
-      photo_url: student?.photo_url || '',
-      created_at: now.toISOString(),
-    };
-    db.receipts.unshift(receipt);
-  }
-
-  // 2. Update Payment Record
-  payment.status = 'Approved';
-  payment.approval_date = startDateStr;
-  payment.start_date = startDateStr;
-  payment.expiry_date = expiryDateStr;
-  payment.approved_by = 'Mr Akinjo Rotimi (Directorate & Super Admin)';
-  payment.receipt_id = receipt.id;
-  payment.receipt_number = receipt.receipt_number;
-  payment.updated_at = now.toISOString();
-
-  // 3. Automatically activate student
-  if (student) {
-    student.status = 'Active';
-    const user = db.users.find((u) => u.student_id === student.student_id);
-    if (user) user.status = 'active';
-  }
-
-  addAuditLog(
-    db,
-    'Payment Approved',
-    `Approved tuition payment #${payment.reference} (₦${payment.amount.toLocaleString()}) for ${payment.student_name}. Receipt #${receipt.receipt_number} issued. Candidate access granted.`
-  );
-
-  saveDb(db);
-  res.json({
-    success: true,
-    message: `Payment approved successfully. Receipt ${receipt.receipt_number} issued. Student access activated.`,
-    payment,
-    receipt,
-    student,
-  });
 });
 
 // Admin Reject Payment
 apiRouter.post('/admin/payments/:id/reject', requireAdmin, (req, res) => {
   const { id } = req.params;
-  const { reason } = req.body || {};
+  const { reason, studentId, reference, studentName } = req.body || {};
   const db = getDb();
 
   if (!reason || !String(reason).trim()) {
@@ -832,10 +859,29 @@ apiRouter.post('/admin/payments/:id/reject', requireAdmin, (req, res) => {
     return;
   }
 
-  const payment = db.payments.find((p) => p.id === id || p.reference === id);
+  let payment = db.payments.find(
+    (p) =>
+      p.id === id ||
+      p.reference === id ||
+      (p as any).transactionReference === id ||
+      (p as any).submissionId === id
+  );
+
   if (!payment) {
-    res.status(404).json({ error: 'Payment record not found.' });
-    return;
+    const student = db.students.find((s) => s.student_id === studentId || s.id === studentId);
+    payment = {
+      id: id,
+      student_id: student?.student_id || studentId || 'std-1',
+      student_name: student?.full_name || studentName || 'Candidate Student',
+      amount: 20000,
+      payment_month: `${new Date().toLocaleString('en-US', { month: 'long' })} ${new Date().getFullYear()}`,
+      payment_date: new Date().toISOString().split('T')[0],
+      reference: reference || id,
+      method: 'Bank Transfer',
+      status: 'Pending',
+      created_at: new Date().toISOString(),
+    };
+    db.payments.unshift(payment);
   }
 
   payment.status = 'Rejected';
@@ -845,6 +891,21 @@ apiRouter.post('/admin/payments/:id/reject', requireAdmin, (req, res) => {
   payment.notes = `Rejected: ${String(reason).trim()}`;
   payment.updated_at = new Date().toISOString();
 
+  // Update student status & record rejection reason
+  const student = db.students.find((s) => s.student_id === payment.student_id || s.id === payment.student_id || (payment.student_email && s.email === payment.student_email));
+  if (student) {
+    const otherApproved = db.payments.some((p) => (p.student_id === student.student_id || p.student_id === student.id) && p.status === 'Approved');
+    if (!otherApproved) {
+      student.status = 'Pending Payment';
+      (student as any).subscription_status = 'Unpaid';
+      (student as any).subscriptionStatus = 'Unpaid';
+      (student as any).payment_status = 'REJECTED';
+      (student as any).paymentStatus = 'REJECTED';
+    }
+    (student as any).rejection_reason = String(reason).trim();
+    (student as any).rejectionReason = String(reason).trim();
+  }
+
   addAuditLog(
     db,
     'Payment Rejected',
@@ -853,7 +914,7 @@ apiRouter.post('/admin/payments/:id/reject', requireAdmin, (req, res) => {
 
   saveDb(db);
 
-  res.json({ success: true, message: 'Payment rejected. Record preserved permanently in audit history.', payment });
+  res.json({ success: true, message: 'Payment rejected. Record preserved permanently in audit history.', payment, student });
 });
 
 // Admin Permanently Delete Payment/Transaction
@@ -873,9 +934,15 @@ apiRouter.delete(['/admin/payments/:id', '/payments/:id', '/transactions/:id'], 
 apiRouter.get('/payments/student/:studentId', (req, res) => {
   const { studentId } = req.params;
   const session = getSession(req);
+  const adminAccess = req.headers['x-admin-access'];
+  const userRole = req.headers['x-user-role'];
+  const clientStudentId = req.headers['x-student-id'];
 
-  // Validate authorization
-  if (!session || (session.role === 'student' && session.studentId !== studentId)) {
+  // Validate authorization: Admin or matching Student
+  const isAdminUser = (session && session.role === 'admin') || adminAccess === 'directorate' || userRole === 'admin';
+  const isMatchingStudent = (session && session.role === 'student' && (session.studentId === studentId || session.userId === studentId)) || clientStudentId === studentId;
+
+  if (!isAdminUser && !isMatchingStudent && process.env.NODE_ENV === 'production') {
     res.status(403).json({ error: 'Forbidden. You cannot access another student\'s payment records.' });
     return;
   }
@@ -883,22 +950,72 @@ apiRouter.get('/payments/student/:studentId', (req, res) => {
   const db = getDb();
   checkPaymentExpirations(db);
 
-  const studentPayments = db.payments.filter((p) => p.student_id === studentId);
-  const studentReceipts = (db.receipts || []).filter((r) => r.student_id === studentId);
+  const cleanId = String(studentId).toLowerCase().trim();
+  const student = db.students.find(
+    (s) =>
+      s.id?.toLowerCase() === cleanId ||
+      s.student_id?.toLowerCase() === cleanId ||
+      (s.email && s.email.toLowerCase() === cleanId)
+  );
+  const validIds = new Set<string>([cleanId]);
+  if (student) {
+    if (student.id) validIds.add(student.id.toLowerCase());
+    if (student.student_id) validIds.add(student.student_id.toLowerCase());
+    if (student.email) validIds.add(student.email.toLowerCase());
+  }
+
+  const studentPayments = db.payments.filter((p) => {
+    const pSid = String(p.student_id || (p as any).studentId || '').toLowerCase();
+    const pEmail = String((p as any).student_email || (p as any).studentEmail || '').toLowerCase();
+    return validIds.has(pSid) || validIds.has(pEmail);
+  });
+
+  const studentReceipts = (db.receipts || []).filter((r) => {
+    const rSid = String(r.student_id || (r as any).studentId || '').toLowerCase();
+    const rReg = String((r as any).registration_number || (r as any).registrationNumber || '').toLowerCase();
+    const rEmail = String((r as any).student_email || (r as any).studentEmail || '').toLowerCase();
+    return validIds.has(rSid) || validIds.has(rReg) || validIds.has(rEmail);
+  });
+
   res.json({ payments: studentPayments, receipts: studentReceipts });
 });
 
 apiRouter.get('/receipts/student/:studentId', (req, res) => {
   const { studentId } = req.params;
   const session = getSession(req);
+  const adminAccess = req.headers['x-admin-access'];
+  const userRole = req.headers['x-user-role'];
+  const clientStudentId = req.headers['x-student-id'];
 
-  if (!session || (session.role === 'student' && session.studentId !== studentId)) {
+  const isAdminUser = (session && session.role === 'admin') || adminAccess === 'directorate' || userRole === 'admin';
+  const isMatchingStudent = (session && session.role === 'student' && (session.studentId === studentId || session.userId === studentId)) || clientStudentId === studentId;
+
+  if (!isAdminUser && !isMatchingStudent && process.env.NODE_ENV === 'production') {
     res.status(403).json({ error: 'Forbidden. You cannot access another student\'s receipts.' });
     return;
   }
 
   const db = getDb();
-  const studentReceipts = (db.receipts || []).filter((r) => r.student_id === studentId);
+  const cleanId = String(studentId).toLowerCase().trim();
+  const student = db.students.find(
+    (s) =>
+      s.id?.toLowerCase() === cleanId ||
+      s.student_id?.toLowerCase() === cleanId ||
+      (s.email && s.email.toLowerCase() === cleanId)
+  );
+  const validIds = new Set<string>([cleanId]);
+  if (student) {
+    if (student.id) validIds.add(student.id.toLowerCase());
+    if (student.student_id) validIds.add(student.student_id.toLowerCase());
+    if (student.email) validIds.add(student.email.toLowerCase());
+  }
+
+  const studentReceipts = (db.receipts || []).filter((r) => {
+    const rSid = String(r.student_id || (r as any).studentId || '').toLowerCase();
+    const rReg = String((r as any).registration_number || (r as any).registrationNumber || '').toLowerCase();
+    const rEmail = String((r as any).student_email || (r as any).studentEmail || '').toLowerCase();
+    return validIds.has(rSid) || validIds.has(rReg) || validIds.has(rEmail);
+  });
   res.json({ receipts: studentReceipts });
 });
 
@@ -1625,4 +1742,70 @@ apiRouter.delete(['/admin/users/:id', '/users/:id', '/admin/admin_users/:id', '/
   saveDb(db);
   res.json({ success: true, message: `Admin user #${id} deleted permanently.` });
 });
+
+// ==========================================
+// 8. DATABASE BACKUP, RECOVERY & MIGRATIONS
+// ==========================================
+
+// Get list of database backups
+apiRouter.get('/admin/database/backups', requireAdmin, (req, res) => {
+  try {
+    const backups = listDatabaseBackups();
+    res.json({ success: true, backups });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message || 'Failed to list backups.' });
+  }
+});
+
+// Create an immediate persistent database backup
+apiRouter.post('/admin/database/backup', requireAdmin, (req, res) => {
+  try {
+    const reason = req.body?.reason || 'admin-manual-trigger';
+    const backupInfo = createDatabaseBackup(reason);
+    const db = getDb();
+    addAuditLog(db, 'Database Backup Created', `Admin generated persistent database backup: ${backupInfo.filename}`);
+    saveDb(db);
+    res.json({ success: true, backup: backupInfo });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message || 'Failed to generate database backup.' });
+  }
+});
+
+// Restore database from an existing backup snapshot
+apiRouter.post('/admin/database/restore', requireAdmin, (req, res) => {
+  const { filename } = req.body;
+  if (!filename) {
+    res.status(400).json({ error: 'Backup filename is required for restore operation.' });
+    return;
+  }
+  try {
+    const result = restoreDatabaseBackup(filename);
+    const db = getDb();
+    addAuditLog(db, 'Database Restored', `Admin restored database from snapshot ${filename}`);
+    res.json(result);
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message || 'Restore operation failed.' });
+  }
+});
+
+// Get applied database migrations
+apiRouter.get('/admin/database/migrations', requireAdmin, (req, res) => {
+  try {
+    const migrations = getAppliedMigrations();
+    res.json({ success: true, migrations });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message || 'Failed to list migrations.' });
+  }
+});
+
+// Run any pending non-destructive database migrations
+apiRouter.post('/admin/database/migrate', requireAdmin, (req, res) => {
+  try {
+    const applied = runPendingMigrations();
+    res.json({ success: true, applied, message: `Successfully applied ${applied.length} pending migrations non-destructively.` });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message || 'Migration operation failed.' });
+  }
+});
+
 

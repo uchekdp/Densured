@@ -273,34 +273,195 @@ export const StudentPortal: React.FC = () => {
     }
   };
 
-  // Sync shift selection when switching candidates
-  useEffect(() => {
-    if (currentStudent.studentShift) {
-      setSelectedShift(currentStudent.studentShift);
-    }
-  }, [currentStudent.id, currentStudent.studentShift]);
+  // ID Card Generation Eligibility: Unlocked if student has their first approved monthly payment (Requirement 1 & 3)
+  const canGenerateIdCard = Boolean(
+    isSubscriptionActive ||
+    currentStudent.hasFirstPaymentApproved ||
+    currentStudent.paymentStatus === 'APPROVED' ||
+    (monthlyPaymentSubmissions || []).some(
+      (m) =>
+        (m.studentId === currentStudent.id || m.registrationNumber === currentStudent.registrationNumber) &&
+        m.status === 'Approved'
+    ) ||
+    (transactions || []).some(
+      (t) =>
+        (t.studentId === currentStudent.id || t.studentId === currentStudent.registrationNumber) &&
+        (t.status === 'Successful' || (t.status as string) === 'Approved')
+    ) ||
+    (officialReceipts || []).some(
+      (r) =>
+        r.studentId === currentStudent.id ||
+        r.registrationNumber === currentStudent.registrationNumber ||
+        (r.studentEmail && currentStudent.email && r.studentEmail.toLowerCase() === currentStudent.email.toLowerCase())
+    )
+  );
+
+  // Authoritative Approved Official Receipts for current student
+  const studentApprovedReceipts = useMemo(() => {
+    const list: OfficialReceipt[] = [];
+    const seenRefs = new Set<string>();
+
+    // 1. From officialReceipts
+    (officialReceipts || []).forEach((r) => {
+      const isMatch =
+        r.studentId === currentStudent.id ||
+        r.registrationNumber === currentStudent.registrationNumber ||
+        (r.studentEmail && currentStudent.email && r.studentEmail.toLowerCase() === currentStudent.email.toLowerCase()) ||
+        (r.studentName && currentStudent.fullName && r.studentName.toLowerCase().trim() === currentStudent.fullName.toLowerCase().trim());
+      if (isMatch && r.status === 'Approved') {
+        const refKey = (r.transactionReference || r.receiptNumber || r.id).toLowerCase();
+        if (!seenRefs.has(refKey)) {
+          seenRefs.add(refKey);
+          list.push(r);
+        }
+      }
+    });
+
+    // 2. From approved monthlyPaymentSubmissions if not yet in list
+    (monthlyPaymentSubmissions || []).forEach((m) => {
+      const isMatch =
+        (m.studentId === currentStudent.id ||
+          m.registrationNumber === currentStudent.registrationNumber ||
+          (m.studentName && currentStudent.fullName && m.studentName.toLowerCase().trim() === currentStudent.fullName.toLowerCase().trim())) &&
+        m.status === 'Approved';
+      if (isMatch) {
+        const refKey = (m.transactionReference || m.referenceOrProof || m.id).toLowerCase();
+        if (!seenRefs.has(refKey)) {
+          seenRefs.add(refKey);
+          const now = new Date();
+          const receiptNum = m.receiptNumber || `DEA-REC-2026-${String(list.length + 1).padStart(5, '0')}`;
+          list.push({
+            id: `rec-${m.id}`,
+            receiptNumber: receiptNum,
+            transactionReference: m.transactionReference || m.referenceOrProof || 'DEC-TX-REF',
+            studentId: currentStudent.id,
+            studentName: currentStudent.fullName,
+            studentEmail: currentStudent.email,
+            studentPhone: currentStudent.phone,
+            registrationNumber: currentStudent.registrationNumber,
+            program: currentStudent.program,
+            studentShift: m.studentShift || currentStudent.studentShift || 'Morning',
+            amount: m.amount || currentStudent.monthlyFee || 20000,
+            amountInWords: (m.amount || 20000) === 20000 ? 'TWENTY THOUSAND NAIRA ONLY' : `${(m.amount || 20000).toLocaleString()} NAIRA ONLY`,
+            currency: 'NGN',
+            monthPeriod: m.monthPeriod || currentMonthPeriod,
+            validUntil: currentStudent.subscriptionExpiryDate || defaultEndOfMonth,
+            issueDate: m.paymentDate || (m.submittedAt ? m.submittedAt.split(',')[0] : new Date().toLocaleDateString('en-GB')),
+            approvedBy: m.approvedBy || 'Mr Akinjo Rotimi (Directorate Admin)',
+            approvedAt: m.approvedAt || m.submittedAt || new Date().toLocaleDateString('en-GB'),
+            qrPayload: `https://densuredconsult.ng/verify-receipt?receipt=${receiptNum}&ref=${refKey}&status=APPROVED`,
+            status: 'Approved',
+            paymentMethod: (m.paymentMethod as any) || 'Bank Transfer',
+            studentAvatar: studentAvatarImg,
+            photoUrl: studentAvatarImg,
+          });
+        }
+      }
+    });
+
+    // 3. From approved transactions if not yet in list
+    (transactions || []).forEach((t) => {
+      const isMatch =
+        (t.studentId === currentStudent.id ||
+          t.studentId === currentStudent.registrationNumber ||
+          (t.studentName && currentStudent.fullName && t.studentName.toLowerCase().trim() === currentStudent.fullName.toLowerCase().trim())) &&
+        (t.status === 'Successful' || (t.status as string) === 'Approved');
+      if (isMatch) {
+        const refKey = (t.reference || t.id).toLowerCase();
+        if (!seenRefs.has(refKey)) {
+          seenRefs.add(refKey);
+          const now = new Date();
+          const receiptNum = t.receiptNumber || `DEA-REC-2026-${String(list.length + 1).padStart(5, '0')}`;
+          list.push({
+            id: `rec-${t.id}`,
+            receiptNumber: receiptNum,
+            transactionReference: t.reference || 'DEC-TX-REF',
+            studentId: currentStudent.id,
+            studentName: currentStudent.fullName,
+            studentEmail: currentStudent.email,
+            studentPhone: currentStudent.phone,
+            registrationNumber: currentStudent.registrationNumber,
+            program: t.program || currentStudent.program,
+            studentShift: t.studentShift || currentStudent.studentShift || 'Morning',
+            amount: t.amount || currentStudent.monthlyFee || 20000,
+            amountInWords: (t.amount || 20000) === 20000 ? 'TWENTY THOUSAND NAIRA ONLY' : `${(t.amount || 20000).toLocaleString()} NAIRA ONLY`,
+            currency: 'NGN',
+            monthPeriod: t.monthPeriod || currentMonthPeriod,
+            validUntil: t.validUntil || currentStudent.subscriptionExpiryDate || defaultEndOfMonth,
+            issueDate: t.date || (t.timestamp ? t.timestamp.split(',')[0] : new Date().toLocaleDateString('en-GB')),
+            approvedBy: t.approvedBy || 'Mr Akinjo Rotimi (Directorate Admin)',
+            approvedAt: t.approvedAt || t.date || new Date().toLocaleDateString('en-GB'),
+            qrPayload: t.qrPayload || `https://densuredconsult.ng/verify-receipt?receipt=${receiptNum}&status=APPROVED`,
+            status: 'Approved',
+            paymentMethod: (t.paymentMethod as any) || 'Bank Transfer',
+            studentAvatar: studentAvatarImg,
+            photoUrl: studentAvatarImg,
+          });
+        }
+      }
+    });
+
+    return list;
+  }, [officialReceipts, monthlyPaymentSubmissions, transactions, currentStudent, studentAvatarImg, currentMonthPeriod, defaultEndOfMonth]);
 
   // Open the authentic Official Receipt with Logo and QR Code
   const handleOpenOfficialReceipt = (tx?: any) => {
-    if (currentStudent.lastApprovedReceipt && (!tx || tx.reference === currentStudent.lastApprovedReceipt.transactionReference)) {
+    // If passed an existing OfficialReceipt directly
+    if (tx && tx.receiptNumber && tx.amount) {
       openReceiptModal({
-        ...currentStudent.lastApprovedReceipt,
+        ...tx,
         studentAvatar: studentAvatarImg,
+        photoUrl: studentAvatarImg,
       });
       return;
     }
 
-    const targetTx = tx || transactions.find((t) => t.studentId === currentStudent.id && t.status === 'Successful');
+    // Try finding in studentApprovedReceipts first
+    const ref = tx?.reference || tx?.transactionReference;
+    const existingRec = studentApprovedReceipts.find(
+      (r) =>
+        (ref && (r.transactionReference?.toLowerCase() === ref.toLowerCase() || r.receiptNumber === tx?.receiptNumber)) ||
+        (tx?.receiptNumber && r.receiptNumber === tx.receiptNumber)
+    );
+
+    if (existingRec) {
+      openReceiptModal({
+        ...existingRec,
+        studentAvatar: studentAvatarImg,
+        photoUrl: studentAvatarImg,
+      });
+      return;
+    }
+
+    if (currentStudent.lastApprovedReceipt && (!tx || tx.reference === currentStudent.lastApprovedReceipt.transactionReference)) {
+      openReceiptModal({
+        ...currentStudent.lastApprovedReceipt,
+        studentAvatar: studentAvatarImg,
+        photoUrl: studentAvatarImg,
+      });
+      return;
+    }
+
+    if (studentApprovedReceipts.length > 0) {
+      openReceiptModal({
+        ...studentApprovedReceipts[0],
+        studentAvatar: studentAvatarImg,
+        photoUrl: studentAvatarImg,
+      });
+      return;
+    }
+
+    const targetTx = tx || transactions.find((t) => (t.studentId === currentStudent.id || t.studentId === currentStudent.registrationNumber) && (t.status === 'Successful' || (t.status as string) === 'Approved'));
     const shift = targetTx?.studentShift || currentStudent.studentShift || 'Morning';
-    const amount = targetTx?.amount || (shift === 'Morning' ? 20000 : 15000);
-    const receiptNum = targetTx?.receiptNumber || `DEC-REC-2026-${Math.floor(1000 + Math.random() * 9000)}`;
-    const month = targetTx?.monthPeriod || currentStudent.subscriptionMonth || 'September 2026';
-    const validUntil = targetTx?.validUntil || currentStudent.subscriptionExpiryDate || '30 Sep 2026';
+    const amount = targetTx?.amount || currentStudent.monthlyFee || 20000;
+    const receiptNum = targetTx?.receiptNumber || `DEA-REC-2026-${String(officialReceipts.length + 1).padStart(5, '0')}`;
+    const month = targetTx?.monthPeriod || currentStudent.subscriptionMonth || currentMonthPeriod;
+    const validUntil = targetTx?.validUntil || currentStudent.subscriptionExpiryDate || defaultEndOfMonth;
 
     const officialReceipt: OfficialReceipt = {
       id: `rec-${targetTx ? targetTx.id : Date.now()}`,
       receiptNumber: receiptNum,
-      transactionReference: targetTx ? targetTx.reference : `DEC-PAY-${Math.floor(100000 + Math.random() * 900000)}`,
+      transactionReference: targetTx ? (targetTx.reference || targetTx.id) : `DEC-PAY-${Date.now().toString().slice(-6)}`,
       studentId: currentStudent.id,
       studentName: currentStudent.fullName,
       studentEmail: currentStudent.email,
@@ -309,12 +470,12 @@ export const StudentPortal: React.FC = () => {
       program: currentStudent.program,
       studentShift: shift,
       amount,
-      amountInWords: shift === 'Morning' ? 'TWENTY THOUSAND NAIRA ONLY' : 'FIFTEEN THOUSAND NAIRA ONLY',
+      amountInWords: amount === 20000 ? 'TWENTY THOUSAND NAIRA ONLY' : `${amount.toLocaleString()} NAIRA ONLY`,
       currency: 'NGN',
       monthPeriod: month,
       validUntil,
       issueDate: targetTx?.timestamp || new Date().toLocaleDateString('en-GB'),
-      approvedBy: 'Mr. Akinjo Rotimi (Founder)',
+      approvedBy: targetTx?.approvedBy || 'Mr. Akinjo Rotimi (Directorate Admin)',
       approvedAt: targetTx?.approvedAt || 'Immediate Verification',
       qrPayload: `https://densuredconsult.ng/verify-receipt?receipt=${receiptNum}&student=${encodeURIComponent(currentStudent.fullName)}&reg=${currentStudent.registrationNumber}&shift=${shift}&amount=${amount}&status=APPROVED`,
       status: 'Approved',
@@ -741,6 +902,7 @@ export const StudentPortal: React.FC = () => {
 
   const navItems: { id: StudentPortalTab; label: string; icon: React.ReactNode; badge?: string }[] = [
     { id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard className="w-4 h-4" /> },
+    { id: 'receipts', label: 'Receipts', icon: <FileText className="w-4 h-4" />, badge: studentApprovedReceipts.length > 0 ? `${studentApprovedReceipts.length}` : undefined },
     { id: 'id-card', label: 'My ID Card', icon: <CreditCard className="w-4 h-4" />, badge: 'Official' },
     { id: 'profile', label: 'Candidate Profile', icon: <User className="w-4 h-4" /> },
     { id: 'attendance', label: 'Attendance Record', icon: <CalendarCheck className="w-4 h-4" /> },
@@ -751,7 +913,7 @@ export const StudentPortal: React.FC = () => {
     { id: 'timetables', label: 'Timetables', icon: <Clock className="w-4 h-4" /> },
     { id: 'notes', label: 'Lecture Notes', icon: <BookOpen className="w-4 h-4" /> },
     { id: 'announcements', label: 'Announcements', icon: <Megaphone className="w-4 h-4" /> },
-    { id: 'finance', label: 'Tuition & Receipts', icon: <DollarSign className="w-4 h-4" /> },
+    { id: 'finance', label: 'Tuition & Payment', icon: <DollarSign className="w-4 h-4" /> },
   ];
 
   const handleStudentLoginSubmit = async (e: React.FormEvent) => {
@@ -858,27 +1020,7 @@ export const StudentPortal: React.FC = () => {
             </button>
           </form>
 
-          {/* Quick select registered candidate demo */}
-          <div className="pt-4 border-t border-slate-200 space-y-2">
-            <span className="text-[11px] font-bold text-[#1D1918]/60 uppercase tracking-wider block text-center">
-              Quick Select Registered Profile:
-            </span>
-            <div className="flex flex-wrap gap-1.5 justify-center">
-              {studentsList.slice(0, 3).map((std) => (
-                <button
-                  key={std.id}
-                  type="button"
-                  onClick={() => {
-                    setLoginIdentifier(std.registrationNumber);
-                    setLoginPassword(std.password || 'student123');
-                  }}
-                  className="px-2.5 py-1 text-[11px] bg-slate-100 hover:bg-[#098CD0]/10 text-[#25166B] font-bold rounded-lg border border-slate-200 transition-colors cursor-pointer"
-                >
-                  {std.fullName.split(' ')[0]} ({std.program})
-                </button>
-              ))}
-            </div>
-          </div>
+
 
           {/* New student prompt */}
           <div className="text-center pt-2">
@@ -926,26 +1068,6 @@ export const StudentPortal: React.FC = () => {
           </div>
 
           <div className="flex items-center gap-3">
-            <div className="flex items-center gap-1.5 hidden sm:flex">
-              <span className="text-xs text-[#1D1918]/60 font-semibold">Switch Candidate:</span>
-              <div className="flex gap-1">
-                {studentsList.slice(0, 4).map((std) => (
-                  <button
-                    key={std.id}
-                    onClick={() => switchStudent(std.id)}
-                    title={std.fullName}
-                    className={`px-2.5 py-1 text-xs rounded-lg font-bold transition-all cursor-pointer ${
-                      std.id === currentStudent.id
-                        ? 'bg-[#25166B] text-white shadow-2xs'
-                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                    }`}
-                  >
-                    {std.fullName.split(' ')[0]}
-                  </button>
-                ))}
-              </div>
-            </div>
-
             {/* Sign Out Button */}
             <button
               type="button"
@@ -1053,8 +1175,9 @@ export const StudentPortal: React.FC = () => {
                 >
                   {tab.icon}
                   <span>{tab.label}</span>
-                  {!isSubscriptionActive && ['cbt-mocks', 'practice-sets', 'notes', 'progress', 'results', 'id-card', 'attendance', 'timetables'].includes(tab.id) && (
-                    <span className="text-amber-500 font-bold text-xs" title="Locked until ₦20,000 tuition approved">
+                  {((!isSubscriptionActive && ['cbt-mocks', 'practice-sets', 'notes', 'progress', 'results', 'attendance', 'timetables'].includes(tab.id)) ||
+                    (!canGenerateIdCard && tab.id === 'id-card')) && (
+                    <span className="text-amber-500 font-bold text-xs" title="Locked until tuition approved">
                       🔒
                     </span>
                   )}
@@ -1359,15 +1482,15 @@ export const StudentPortal: React.FC = () => {
                     </a>
 
                     <a
-                      href="#/student-portal?tab=finance"
+                      href="#/student-portal?tab=receipts"
                       onClick={(e) => {
                         e.preventDefault();
-                        setStudentTab('finance');
+                        setStudentTab('receipts');
                       }}
                       className="p-3 bg-slate-50 hover:bg-slate-100 rounded-xl border border-slate-200 text-center space-y-1 transition-colors block"
                     >
-                      <DollarSign className="w-5 h-5 text-purple-600 mx-auto" />
-                      <span className="text-xs font-bold text-[#0a192f] block">Tuition Receipt</span>
+                      <FileText className="w-5 h-5 text-purple-600 mx-auto" />
+                      <span className="text-xs font-bold text-[#0a192f] block">Receipts</span>
                     </a>
                   </div>
                 </div>
@@ -1411,8 +1534,66 @@ export const StudentPortal: React.FC = () => {
 
         {/* TAB 2: MY ID CARD */}
         {studentTab === 'id-card' && (
-          !isSubscriptionActive ? (
-            <LockedFeatureNotice featureName="Official Student Identity Card" />
+          !canGenerateIdCard ? (
+            <div className="bg-white p-8 sm:p-10 rounded-3xl border border-slate-200 shadow-sm max-w-2xl mx-auto text-center space-y-5">
+              <div className="w-16 h-16 rounded-3xl bg-amber-100 text-amber-700 flex items-center justify-center mx-auto shadow-xs">
+                <Lock className="w-8 h-8 text-amber-700" />
+              </div>
+              <div className="space-y-2">
+                <span className="px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-100 text-amber-900 border border-amber-300">
+                  Verification Clearance Required
+                </span>
+                <h3 className="text-xl sm:text-2xl font-black text-[#25166B]">
+                  Official Student Identity Card Locked
+                </h3>
+                <p className="text-xs text-slate-600 leading-relaxed max-w-lg mx-auto">
+                  {activePendingPayment
+                    ? `Your tuition payment (#${activePendingPayment.reference}) is currently awaiting administrative approval. Your official CR80 student ID card with encrypted QR verification code will be enabled automatically as soon as an administrator approves your payment.`
+                    : activeRejectedPayment
+                    ? `Your previous payment submission was declined: ${activeRejectedPayment.rejectionReason || 'Details unverified'}. ID card generation remains locked until a verified payment is approved.`
+                    : 'Official student identity card generation requires at least one approved monthly tuition payment. Once an administrator approves your payment, your official student ID card is enabled permanently.'}
+                </p>
+              </div>
+
+              <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 text-xs text-slate-700 space-y-2 max-w-md mx-auto text-left">
+                <div className="flex justify-between">
+                  <span className="text-slate-500 font-medium">Candidate:</span>
+                  <strong className="text-slate-900 font-bold">{currentStudent.fullName}</strong>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-500 font-medium">Student ID / Reg No:</span>
+                  <strong className="font-mono text-[#0284c7]">{currentStudent.registrationNumber}</strong>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-500 font-medium">Academic Programme:</span>
+                  <strong className="text-[#25166B]">{currentStudent.program}</strong>
+                </div>
+                <div className="flex justify-between border-t border-slate-200 pt-2">
+                  <span className="text-slate-500 font-medium">Clearance Status:</span>
+                  <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase ${
+                    activePendingPayment
+                      ? 'bg-amber-100 text-amber-900 border border-amber-300'
+                      : activeRejectedPayment
+                      ? 'bg-red-100 text-red-900 border border-red-300'
+                      : 'bg-slate-200 text-slate-700'
+                  }`}>
+                    {activePendingPayment ? 'Pending Approval' : activeRejectedPayment ? 'Declined - Resubmit' : 'Payment Required'}
+                  </span>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setStudentTab('finance');
+                  if (!activePendingPayment) setShowFinanceForm(true);
+                }}
+                className="w-full sm:w-auto px-8 py-3.5 rounded-xl bg-[#ea580c] hover:bg-[#c2410c] text-white font-extrabold text-xs uppercase tracking-wider shadow-md transition-all inline-flex items-center justify-center gap-2 cursor-pointer"
+              >
+                <CreditCard className="w-4 h-4" />
+                <span>{activePendingPayment ? 'View Pending Payment Status' : 'Pay Monthly Tuition & Unlock ID Card'}</span>
+              </button>
+            </div>
           ) : (
             <div className="space-y-6">
             <div className="bg-white p-6 sm:p-8 rounded-3xl border border-slate-200 shadow-sm space-y-6">
@@ -3008,6 +3189,267 @@ export const StudentPortal: React.FC = () => {
           </div>
         )}
 
+        {/* TAB: MY OFFICIAL TUITION RECEIPTS */}
+        {(studentTab === 'receipts' || studentTab === 'monthly-payments' || studentTab === 'payment-history') && (
+          <div className="bg-white p-6 sm:p-8 rounded-3xl border border-slate-200 shadow-sm space-y-6">
+            {/* Header with Academy Branding */}
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-slate-200 pb-5">
+              <div>
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="p-1.5 rounded-lg bg-[#25166B] text-[#FFC600]">
+                    <FileText className="w-5 h-5 text-[#FFC600]" />
+                  </span>
+                  <span className="text-[10px] font-black uppercase tracking-wider text-[#0284c7] bg-sky-50 px-2.5 py-0.5 rounded-full border border-sky-200">
+                    Bursary &amp; Accounts Registry
+                  </span>
+                </div>
+                <h2 className="text-xl sm:text-2xl font-black text-[#0a192f]">
+                  My Official Tuition Receipts
+                </h2>
+                <p className="text-slate-500 text-xs mt-0.5">
+                  Official verified receipts for all your cleared monthly tuition payments at D Ensured Consult Academy. View, print on A4 paper, or download PDF receipts with digital QR verification.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setStudentTab('finance');
+                    setShowFinanceForm(true);
+                  }}
+                  className="px-4 py-2.5 rounded-xl bg-[#028D3B] hover:bg-[#027531] text-white font-black text-xs shadow-md cursor-pointer flex items-center gap-2 transition-all"
+                >
+                  <CreditCard className="w-4 h-4" />
+                  <span>Submit New Tuition Payment</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Status Notifications */}
+            {activePendingPayment && (
+              <div className="bg-amber-50 border-2 border-amber-300 rounded-2xl p-5 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-amber-200 text-amber-900 flex items-center justify-center shrink-0">
+                    <Clock className="w-5 h-5 text-amber-900" />
+                  </div>
+                  <div>
+                    <span className="px-2 py-0.5 rounded text-[9px] font-black uppercase bg-amber-200 text-amber-900 border border-amber-300">
+                      Pending Clearance
+                    </span>
+                    <h4 className="font-extrabold text-[#25166B] text-sm mt-0.5">
+                      Tuition Submission Awaiting Verification: Ref #{activePendingPayment.reference}
+                    </h4>
+                    <p className="text-xs text-amber-900/80 mt-0.5">
+                      ₦{activePendingPayment.amount.toLocaleString()} submitted on {activePendingPayment.date}. Your official receipt will be generated automatically as soon as an administrator approves your payment.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setStudentTab('finance')}
+                  className="px-3.5 py-1.5 rounded-xl bg-amber-200 hover:bg-amber-300 text-amber-950 font-bold text-xs shrink-0 cursor-pointer transition-colors"
+                >
+                  View Submission Details
+                </button>
+              </div>
+            )}
+
+            {activeRejectedPayment && !activePendingPayment && (
+              <div className="bg-red-50 border-2 border-red-300 rounded-2xl p-5 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-red-100 text-red-700 flex items-center justify-center shrink-0">
+                    <AlertCircle className="w-5 h-5 text-red-600" />
+                  </div>
+                  <div>
+                    <span className="px-2 py-0.5 rounded text-[9px] font-black uppercase bg-red-200 text-red-900 border border-red-300">
+                      Declined Submission
+                    </span>
+                    <h4 className="font-extrabold text-red-900 text-sm mt-0.5">
+                      Payment Verification Declined
+                    </h4>
+                    <p className="text-xs text-red-800 mt-0.5">
+                      Reason: {activeRejectedPayment.rejectionReason || 'Details could not be matched with bank deposits'}. Please submit corrected payment information.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setStudentTab('finance');
+                    setShowFinanceForm(true);
+                  }}
+                  className="px-4 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold text-xs shrink-0 cursor-pointer"
+                >
+                  Resubmit Payment
+                </button>
+              </div>
+            )}
+
+            {/* Receipts Summary KPI Row */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+              <div className="p-4 bg-emerald-50 rounded-2xl border border-emerald-200 space-y-1">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-800">Verified Receipts</span>
+                <div className="text-2xl sm:text-3xl font-black text-emerald-700 font-mono">
+                  {studentApprovedReceipts.length}
+                </div>
+                <span className="text-[10px] text-emerald-600 font-medium block">Approved &amp; Cleared</span>
+              </div>
+
+              <div className="p-4 bg-sky-50 rounded-2xl border border-sky-200 space-y-1">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-[#0284c7]">Total Paid to Date</span>
+                <div className="text-2xl sm:text-3xl font-black text-[#0284c7] font-mono">
+                  ₦{studentApprovedReceipts.reduce((acc, r) => acc + (r.amount || 0), 0).toLocaleString()}
+                </div>
+                <span className="text-[10px] text-sky-600 font-medium block">Bank Verified</span>
+              </div>
+
+              <div className="p-4 bg-amber-50 rounded-2xl border border-amber-200 space-y-1">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-amber-800">Clearance Status</span>
+                <div className="text-base sm:text-lg font-black text-amber-900 truncate">
+                  {isSubscriptionActive ? 'Current Cycle Active' : activePendingPayment ? 'Pending Approval' : 'Payment Due'}
+                </div>
+                <span className="text-[10px] text-amber-700 font-medium block">{currentStudent.studentShift} Shift</span>
+              </div>
+
+              <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-1">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Student ID / Reg No</span>
+                <div className="text-base sm:text-lg font-black text-[#25166B] font-mono truncate">
+                  {currentStudent.registrationNumber}
+                </div>
+                <span className="text-[10px] text-slate-500 font-medium block">{currentStudent.program}</span>
+              </div>
+            </div>
+
+            {/* List of Approved Receipts */}
+            <div className="space-y-4 pt-2">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="font-extrabold text-[#0a192f] text-base">Authorized Receipts Repository</h3>
+                  <p className="text-slate-500 text-xs">Each receipt is generated from saved database records upon administrative approval.</p>
+                </div>
+                <span className="text-xs font-bold text-slate-500">
+                  {studentApprovedReceipts.length} {studentApprovedReceipts.length === 1 ? 'Approved Receipt' : 'Approved Receipts'}
+                </span>
+              </div>
+
+              {studentApprovedReceipts.length > 0 ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {studentApprovedReceipts.map((rec) => (
+                    <div
+                      key={rec.id || rec.receiptNumber}
+                      className="bg-slate-50 hover:bg-slate-100/80 transition-all rounded-2xl border-2 border-slate-200 p-5 space-y-4 shadow-2xs"
+                    >
+                      <div className="flex items-start justify-between gap-3 border-b border-slate-200 pb-3">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-xl bg-[#25166B] text-[#FFC600] flex items-center justify-center shrink-0 shadow-xs">
+                            <FileText className="w-5 h-5 text-[#FFC600]" />
+                          </div>
+                          <div>
+                            <span className="text-[10px] font-bold uppercase text-slate-400 block tracking-wider">
+                              Official Receipt
+                            </span>
+                            <h4 className="font-mono font-black text-[#25166B] text-sm sm:text-base">
+                              {rec.receiptNumber}
+                            </h4>
+                          </div>
+                        </div>
+                        <span className="px-2.5 py-1 rounded-full text-[10px] font-black uppercase bg-emerald-100 text-emerald-800 border border-emerald-300">
+                          PAID
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2.5 text-xs text-slate-600">
+                        <div>
+                          <span className="text-slate-400 block text-[10px]">Payment Purpose</span>
+                          <strong className="text-slate-900 font-bold block">{rec.monthPeriod || 'Monthly Tuition'}</strong>
+                        </div>
+                        <div>
+                          <span className="text-slate-400 block text-[10px]">Amount Paid</span>
+                          <strong className="font-mono text-[#028D3B] font-black block text-sm">
+                            ₦{(rec.amount || 20000).toLocaleString()}
+                          </strong>
+                        </div>
+                        <div>
+                          <span className="text-slate-400 block text-[10px]">Payment Date</span>
+                          <span className="font-medium text-slate-800 block">{rec.issueDate || 'Recorded'}</span>
+                        </div>
+                        <div>
+                          <span className="text-slate-400 block text-[10px]">Approval Date</span>
+                          <span className="font-medium text-slate-800 block">{rec.approvedAt || rec.issueDate}</span>
+                        </div>
+                        <div>
+                          <span className="text-slate-400 block text-[10px]">Transaction Reference</span>
+                          <span className="font-mono text-[#0284c7] truncate block text-[11px]" title={rec.transactionReference}>
+                            {rec.transactionReference}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-slate-400 block text-[10px]">Approved By</span>
+                          <span className="text-slate-800 truncate block text-[11px]" title={rec.approvedBy}>
+                            {rec.approvedBy || 'Mr Akinjo Rotimi (Directorate Admin)'}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="pt-2 border-t border-slate-200 flex flex-wrap items-center justify-between gap-2">
+                        <span className="text-[11px] text-slate-500 font-mono">
+                          ID: {rec.registrationNumber || currentStudent.registrationNumber}
+                        </span>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => handleOpenOfficialReceipt(rec)}
+                            className="px-3.5 py-1.5 rounded-xl bg-[#25166B] hover:bg-[#1c1152] text-[#FFC600] font-black text-xs cursor-pointer flex items-center gap-1.5 shadow-xs transition-colors"
+                          >
+                            <Printer className="w-3.5 h-3.5 text-[#FFC600]" />
+                            <span>View &amp; Print Receipt</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              handleOpenOfficialReceipt(rec);
+                            }}
+                            className="px-3 py-1.5 rounded-xl border border-slate-300 hover:bg-slate-200 text-slate-700 font-bold text-xs cursor-pointer flex items-center gap-1 transition-colors"
+                          >
+                            <Download className="w-3.5 h-3.5" />
+                            <span>PDF</span>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="bg-slate-50 rounded-2xl border border-slate-200 p-8 sm:p-10 text-center space-y-4">
+                  <div className="w-16 h-16 rounded-2xl bg-slate-200 text-slate-500 flex items-center justify-center mx-auto">
+                    <FileText className="w-8 h-8 text-slate-400" />
+                  </div>
+                  <div className="max-w-md mx-auto space-y-2">
+                    <h4 className="font-extrabold text-[#0a192f] text-base">No Approved Receipts Yet</h4>
+                    <p className="text-slate-500 text-xs leading-relaxed">
+                      Official receipts are generated automatically once an administrator reviews and approves your monthly tuition payment. Never generated from sample data.
+                    </p>
+                  </div>
+                  <div className="pt-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setStudentTab('finance');
+                        setShowFinanceForm(true);
+                      }}
+                      className="px-6 py-2.5 rounded-xl bg-[#028D3B] hover:bg-[#027531] text-white font-black text-xs cursor-pointer inline-flex items-center gap-2 shadow-sm"
+                    >
+                      <CreditCard className="w-4 h-4" />
+                      <span>Submit Monthly Tuition Payment</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* TAB 11: FINANCE: TUITION & RECEIPTS */}
         {studentTab === 'finance' && (
           <div className="bg-white p-6 sm:p-8 rounded-3xl border border-slate-200 shadow-sm space-y-6">
@@ -3153,13 +3595,13 @@ export const StudentPortal: React.FC = () => {
                   <span className="font-black text-[#25166B] uppercase text-xs">Approved Institutional Bank Account Details</span>
                 </div>
                 <span className="text-[10px] font-bold text-slate-500 bg-white px-2 py-0.5 rounded border border-slate-200">
-                  Moniepoint MFB Official Account
+                  OPAY MFB Official Account
                 </span>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
                 <div className="bg-white p-3 rounded-xl border border-slate-200">
                   <span className="text-slate-400 block text-[10px] uppercase font-bold">Bank Name</span>
-                  <strong className="text-slate-900 font-bold text-sm">Moniepoint MFB</strong>
+                  <strong className="text-slate-900 font-bold text-sm">OPAY MFB</strong>
                 </div>
                 <div className="bg-white p-3 rounded-xl border border-slate-200">
                   <span className="text-slate-400 block text-[10px] uppercase font-bold">Account Name</span>

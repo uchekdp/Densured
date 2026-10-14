@@ -164,46 +164,7 @@ export const StudentLoginPage: React.FC = () => {
           </p>
         </div>
 
-        {/* Quick Demo Candidate Accounts */}
-        <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200 text-xs space-y-1.5">
-          <span className="font-bold text-slate-600 block text-[10px] uppercase tracking-wider">
-            Quick Demo Candidate Accounts:
-          </span>
-          <div className="text-[11px] text-slate-700 space-y-1">
-            <div className="flex items-center justify-between">
-              <div>
-                <strong className="text-slate-900">Active Student:</strong>
-                <span className="block text-[10px] text-slate-500 font-mono">olawale.adebayo@student.dec.ng</span>
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setIdentifier('olawale.adebayo@student.dec.ng');
-                  setPassword('student123');
-                }}
-                className="px-2 py-1 rounded-lg bg-sky-100 hover:bg-sky-200 text-[#0284c7] text-[10px] font-bold cursor-pointer transition-colors"
-              >
-                Autofill
-              </button>
-            </div>
-            <div className="flex items-center justify-between pt-1 border-t border-slate-200">
-              <div>
-                <strong className="text-slate-900">Expired Tuition:</strong>
-                <span className="block text-[10px] text-amber-700 font-mono">chioma.okonkwo@student.dec.ng</span>
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setIdentifier('chioma.okonkwo@student.dec.ng');
-                  setPassword('student123');
-                }}
-                className="px-2 py-1 rounded-lg bg-amber-100 hover:bg-amber-200 text-amber-800 text-[10px] font-bold cursor-pointer transition-colors"
-              >
-                Autofill
-              </button>
-            </div>
-          </div>
-        </div>
+
 
         {/* Action Links */}
         <div className="pt-2 border-t border-slate-100 flex flex-col items-center gap-3 text-xs text-slate-500">

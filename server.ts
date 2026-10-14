@@ -4,13 +4,34 @@ import fs from 'fs';
 import { createServer as createViteServer } from 'vite';
 import { apiRouter } from './src/server/routes';
 import { getDb } from './src/server/db';
+import { runPendingMigrations } from './src/server/migrations';
+import { createDatabaseBackup } from './src/server/backup';
 
 async function startServer() {
   const app = express();
   const PORT = 3000;
 
   // Initialize and check database
-  getDb();
+  const db = getDb();
+  console.log(`[Database] Persistent store loaded with ${db.students?.length || 0} enrolled students.`);
+
+  // Run any pending non-destructive migrations
+  try {
+    const newlyApplied = runPendingMigrations();
+    if (newlyApplied.length > 0) {
+      console.log(`[Migrations] Applied ${newlyApplied.length} migrations successfully.`);
+    }
+  } catch (migErr) {
+    console.warn('[Migrations] Notice:', migErr);
+  }
+
+  // Automated pre-deployment/startup backup snapshot
+  try {
+    const backup = createDatabaseBackup('server-startup');
+    console.log(`[Backup] Safe startup snapshot stored: ${backup.filename}`);
+  } catch (backupErr) {
+    console.warn('[Backup] Notice:', backupErr);
+  }
 
   // CORS and Preflight middleware for cross-origin, dev environment, and iframe safety
   app.use((req, res, next) => {
