@@ -76,8 +76,15 @@ export const StudentLoginPage: React.FC = () => {
           passportPhotoUrl: raw.passportPhotoUrl || raw.photo_url || raw.avatar || '',
         };
 
+        const sanitized = { ...normalized };
+        delete (sanitized as any).password;
+        localStorage.setItem('dec_student_logged_in', 'true');
+        localStorage.setItem('dec_student_user', JSON.stringify(sanitized));
+        localStorage.setItem('dec_current_student_id', normalized.id || normalized.student_id);
+        localStorage.setItem('dec_student_auth_id', normalized.id || normalized.student_id);
+
         setIsStudentLoggedIn(true);
-        setCurrentStudent(normalized);
+        setCurrentStudent(sanitized);
 
         showToast(`Welcome back, ${normalized.fullName}!`, 'success');
         setCurrentPage('student-portal');

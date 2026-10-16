@@ -456,7 +456,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Student authentication state
   const [isStudentLoggedIn, setIsStudentLoggedIn] = useState<boolean>(() => {
-    return localStorage.getItem('dec_student_logged_in') === 'true';
+    const flag = localStorage.getItem('dec_student_logged_in') === 'true';
+    const hasUser = !!(
+      localStorage.getItem('dec_student_user') ||
+      localStorage.getItem('dec_current_student_id') ||
+      localStorage.getItem('deca_student_id')
+    );
+    return flag && hasUser;
   });
 
   // Students list
@@ -512,6 +518,43 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   });
 
   const [currentStudent, setCurrentStudent] = useState<StudentProfile>(() => {
+    try {
+      const savedUserStr = localStorage.getItem('dec_student_user');
+      const savedStudentId =
+        localStorage.getItem('dec_current_student_id') ||
+        localStorage.getItem('dec_student_auth_id') ||
+        localStorage.getItem('deca_student_id');
+
+      if (savedUserStr) {
+        const parsed = JSON.parse(savedUserStr);
+        if (parsed && (parsed.id || parsed.student_id || parsed.registrationNumber || parsed.email)) {
+          // Check if there is an up-to-date entry in studentsList for freshest state
+          const match = studentsList.find(
+            (s) =>
+              (parsed.id && (s.id === parsed.id || s.registrationNumber === parsed.id)) ||
+              (parsed.student_id && (s.id === parsed.student_id || s.registrationNumber === parsed.student_id)) ||
+              (parsed.registrationNumber && s.registrationNumber === parsed.registrationNumber) ||
+              (parsed.email && s.email && s.email.toLowerCase().trim() === (parsed.email || '').toLowerCase().trim())
+          );
+          if (match) {
+            return { ...match, ...parsed };
+          }
+          return parsed;
+        }
+      }
+
+      if (savedStudentId) {
+        const match = studentsList.find(
+          (s) =>
+            s.id === savedStudentId ||
+            s.registrationNumber === savedStudentId ||
+            (s as any).student_id === savedStudentId
+        );
+        if (match) return match;
+      }
+    } catch (e) {
+      console.warn('Could not restore current student from storage:', e);
+    }
     return studentsList[0] || INITIAL_STUDENTS[0];
   });
 
@@ -971,6 +1014,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     localStorage.setItem('dec_students', JSON.stringify(sanitizedStudents));
   }, [studentsList]);
 
+  // Synchronize active student session in localStorage so refreshing the portal preserves their individual profile
+  useEffect(() => {
+    if (isStudentLoggedIn && currentStudent && (currentStudent.id || currentStudent.registrationNumber)) {
+      try {
+        const sanitized = { ...currentStudent };
+        delete (sanitized as any).password;
+        localStorage.setItem('dec_student_user', JSON.stringify(sanitized));
+        localStorage.setItem('dec_current_student_id', currentStudent.id || currentStudent.registrationNumber);
+        localStorage.setItem('dec_student_logged_in', 'true');
+        if (currentStudent.registrationNumber) {
+          localStorage.setItem('deca_student_id', currentStudent.registrationNumber);
+        }
+      } catch {}
+    }
+  }, [currentStudent, isStudentLoggedIn]);
+
   useEffect(() => {
     const sanitizedApps = applications.map((a) => {
       const copy = { ...a };
@@ -1202,8 +1261,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             setCurrentStudent((cur) => {
               if (!cur) return cur;
               const matched = remoteStudents.find((s) => s.id === cur.id || s.registrationNumber === cur.registrationNumber);
-              if (matched && matched.avatar && (!cur.avatar || cur.avatar.includes('<svg') || cur.avatar.includes('unsplash.com'))) {
-                return { ...cur, avatar: matched.avatar, photoUrl: matched.avatar, photo_url: matched.avatar, passportPhotoUrl: matched.avatar };
+              if (matched) {
+                const updated = {
+                  ...cur,
+                  ...matched,
+                  avatar: (matched.avatar && !matched.avatar.includes('<svg') && !matched.avatar.includes('unsplash.com')) ? matched.avatar : cur.avatar,
+                  photoUrl: (matched.photoUrl && !matched.photoUrl.includes('<svg') && !matched.photoUrl.includes('unsplash.com')) ? matched.photoUrl : cur.photoUrl,
+                  photo_url: (matched.photo_url && !matched.photo_url.includes('<svg') && !matched.photo_url.includes('unsplash.com')) ? matched.photo_url : cur.photo_url,
+                  passportPhotoUrl: (matched.passportPhotoUrl && !matched.passportPhotoUrl.includes('<svg') && !matched.passportPhotoUrl.includes('unsplash.com')) ? matched.passportPhotoUrl : cur.passportPhotoUrl,
+                };
+                delete (updated as any).password;
+                try {
+                  localStorage.setItem('dec_student_user', JSON.stringify(updated));
+                } catch {}
+                return updated;
               }
               return cur;
             });
@@ -1617,15 +1688,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           password: matchingApp.password || 'student123',
           subjectCombinations: matchingApp.subjectCombinations || ['Use of English', 'Mathematics'],
         };
+        const sanitizedAuto = { ...autoStudent };
+        delete (sanitizedAuto as any).password;
         setStudentsList((prev) => [autoStudent, ...prev]);
-        setCurrentStudent(autoStudent);
+        setCurrentStudent(sanitizedAuto);
         setIsStudentLoggedIn(true);
         localStorage.setItem('dec_student_logged_in', 'true');
-        localStorage.setItem('dec_student_user', JSON.stringify(autoStudent));
+        localStorage.setItem('dec_student_user', JSON.stringify(sanitizedAuto));
+        localStorage.setItem('dec_current_student_id', autoStudent.id || autoStudent.registrationNumber);
+        localStorage.setItem('dec_student_auth_id', autoStudent.id || autoStudent.registrationNumber);
+        if (autoStudent.registrationNumber) {
+          localStorage.setItem('deca_student_id', autoStudent.registrationNumber);
+        }
+        setUserRole('student');
         return {
           success: true,
           message: 'Welcome to your Student Portal. Please note that learning features require payment approval.',
-          student: autoStudent,
+          student: sanitizedAuto,
         };
       }
       return {
@@ -1698,6 +1777,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setIsStudentLoggedIn(true);
     localStorage.setItem('dec_student_logged_in', 'true');
     localStorage.setItem('dec_student_user', JSON.stringify(sanitizedSessionStudent));
+    localStorage.setItem('dec_current_student_id', sanitizedSessionStudent.id || sanitizedSessionStudent.registrationNumber);
+    localStorage.setItem('dec_student_auth_id', sanitizedSessionStudent.id || sanitizedSessionStudent.registrationNumber);
+    if (sanitizedSessionStudent.registrationNumber) {
+      localStorage.setItem('deca_student_id', sanitizedSessionStudent.registrationNumber);
+    }
     setUserRole('student');
     showToast('success', 'Portal Access Granted', `Welcome to your individual e-portal, ${resolvedStudent.fullName}!`);
     return { success: true, message: 'Welcome to your student portal.', student: sanitizedSessionStudent };
@@ -1707,7 +1791,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setIsStudentLoggedIn(false);
     localStorage.removeItem('dec_student_logged_in');
     localStorage.removeItem('dec_student_user');
+    localStorage.removeItem('dec_current_student_id');
+    localStorage.removeItem('dec_student_auth_id');
+    localStorage.removeItem('deca_token');
+    localStorage.removeItem('deca_role');
+    localStorage.removeItem('deca_student_id');
+    setCurrentStudent(INITIAL_STUDENTS[0]);
+    setUserRole('guest');
     showToast('info', 'Signed Out', 'You have been signed out of your student portal.');
+    navigateTo('student-login');
   };
 
   const switchStudent = (_studentId: string) => {
